@@ -1,0 +1,10 @@
+# Generierte Ausgabe - nicht versionieren (kompletter Ordner, seit dem
+# Auszug in ein eigenes Repo - vorher wurde das im Root-.gitignore des
+# Maick-Trading-System-Repos pauschal ausgeschlossen)
+data/
+
+# Python/macOS/Editor
+__pycache__/
+*.pyc
+.DS_Store
+.claude/
