@@ -120,6 +120,7 @@ def score_alle():
 
     cache = kursdaten.lade_cache()
     heute = date.today().isoformat()
+    kursdaten.prefetch_charts_parallel([t["yahoo_symbol"] for t in ticker], cache, heute)
     treffer = []
     print(f"Price-Action-Hub: analysiere {len(ticker)} Ticker ...")
     for i, t in enumerate(ticker, 1):

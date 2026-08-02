@@ -181,11 +181,29 @@
   </details>
   <div class="grid" id="grid"></div>
   <div class="empty" id="empty" style="display:none">Keine Treffer für die aktuellen Filter.</div>
+  <button class="btn" id="mehrladen" style="display:none;margin:14px auto" onclick="mehrLaden()">Mehr laden</button>
 </main>
 
-<script src="data/priceaction.js"></script>
 <script>
+// Performance-Review 2026-08-02: priceaction.js (5,4 MB) wurde bisher IMMER
+// blockierend geladen UND zusaetzlich per fetch() als .json nachgeladen, sobald
+// ein Server antwortet - doppelter Download bei jedem Seitenaufruf. Jetzt nur
+// noch echter file://-Fallback: das .js wird erst dynamisch nachgeladen, wenn
+// der fetch() der .json wirklich fehlschlaegt (analog Signal-Hub-Fix).
+function _ladeFallbackSkript(src){
+  return new Promise(res=>{
+    const s=document.createElement('script');
+    s.src=src; s.onload=res; s.onerror=res;
+    document.head.appendChild(s);
+  });
+}
 let DATA=null;
+// Performance-Review 2026-08-02: bis zu ~1300 Karten (inkl. SVG-Kerzenchart je
+// Karte) wurden bei jedem Filterwechsel komplett ins DOM geschrieben. Jetzt
+// Pagination: erste PAGE_SIZE Treffer sofort, Rest per "Mehr laden" (analog
+// Signal-Hub-Fix).
+const PAGE_SIZE=100;
+let CURRENT_LIST=[], RENDER_LIMIT=PAGE_SIZE;
 // Standard-Ansicht: bullisch + stärkste Werte (Min. |Score| 2 -> ca. die
 // staerksten ~100 von ~1300 Tickern), damit das Dashboard nicht ungefiltert
 // mit 1300 neutralen Treffern startet. ↺ Zurücksetzen stellt genau das wieder her.
@@ -246,6 +264,7 @@ async function ladeDaten(){
     const r=await fetch('data/priceaction.json',{cache:'no-store'});
     if(r.ok){DATA=await r.json();return;}
   }catch(e){}
+  await _ladeFallbackSkript('data/priceaction.js');
   DATA = window.PRICEACTION_DATA || {treffer:[],erstellt:null,anzahl:0};
 }
 
@@ -382,9 +401,28 @@ function render(){
   meta.textContent=`${list.length} von ${DATA.anzahl||0} Treffern · Stand ${stand}`;
   updateFilterCount(list.length);
 
-  const grid=document.getElementById('grid');
   document.getElementById('empty').style.display=list.length?'none':'block';
-  grid.innerHTML=list.map((t,i)=>karte(t,i+1)).join('');
+  CURRENT_LIST=list;
+  RENDER_LIMIT=PAGE_SIZE;
+  renderGrid();
+}
+
+function renderGrid(){
+  const grid=document.getElementById('grid');
+  grid.innerHTML=CURRENT_LIST.slice(0,RENDER_LIMIT).map((t,i)=>karte(t,i+1)).join('');
+  const mehr=document.getElementById('mehrladen');
+  if(mehr){
+    if(CURRENT_LIST.length>RENDER_LIMIT){
+      mehr.style.display='';
+      mehr.textContent=`Mehr laden (${RENDER_LIMIT} von ${CURRENT_LIST.length})`;
+    } else {
+      mehr.style.display='none';
+    }
+  }
+}
+function mehrLaden(){
+  RENDER_LIMIT+=PAGE_SIZE;
+  renderGrid();
 }
 
 document.getElementById('marktseg').addEventListener('click',e=>{

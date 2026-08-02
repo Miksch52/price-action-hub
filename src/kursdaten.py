@@ -12,6 +12,7 @@ erkennbar sind. range=1y statt 2y, weil kein 52-Wochen-Hoch/Tief gebraucht
 wird (nur MA200-Kontext + kurzfristige Muster).
 """
 
+import concurrent.futures
 import json
 import ssl
 import time
@@ -81,14 +82,48 @@ def speichere_cache(cache):
 def hole_chart_cached(symbol, cache, heute):
     """Tages-Cache-Wrapper. Jeder Netzwerkfehler wird einzeln abgefangen,
     damit ein einzelner problematischer Ticker nicht den ganzen Lauf
-    abbricht (analog Signal-Hub::hole_chart_cached)."""
+    abbricht (analog Signal-Hub::hole_chart_cached). Performance-Review
+    2026-08-02: Exceptions werden NICHT gecacht (sonst sperrt ein einmaliger
+    Timeout den Ticker fuer den Rest des Tages, ununterscheidbar von "wirklich
+    keine Daten") - nur ein echtes Leerergebnis von yahoo_chart() ist legitim."""
     key = f"{symbol}@{heute}"
     if key in cache:
         return cache[key]
     try:
         d = yahoo_chart(symbol)
     except Exception:
-        d = None
+        time.sleep(0.25)
+        return None
     time.sleep(0.25)  # schont Yahoo, gleiches Lastprofil wie Signal-Hub
     cache[key] = d
     return d
+
+
+def prefetch_charts_parallel(symbols, cache, heute, max_workers=5):
+    """Holt alle noch nicht gecachten Charts parallel statt seriell mit
+    time.sleep() dazwischen (Performance-Review 2026-08-02, analog Signal-Hub
+    scorer.py::prefetch_charts_parallel). Schreibt in `cache` im selben Format
+    wie hole_chart_cached() - danach ist jeder hole_chart_cached()-Aufruf im
+    bestehenden Loop ein reiner Cache-Hit, kein Refactoring der Aufrufer noetig."""
+    fehlend, gesehen = [], set()
+    for symbol in symbols:
+        if not symbol or symbol in gesehen:
+            continue
+        gesehen.add(symbol)
+        if f"{symbol}@{heute}" not in cache:
+            fehlend.append(symbol)
+    if not fehlend:
+        return
+    def _fetch(symbol):
+        try:
+            d = yahoo_chart(symbol)
+            fehler = False
+        except Exception:
+            d, fehler = None, True
+        time.sleep(0.2)
+        return symbol, d, fehler
+    print(f"  Praefetch: {len(fehlend)} neue Charts ({max_workers} parallel) ...")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
+        for symbol, d, fehler in ex.map(_fetch, fehlend):
+            if not fehler:
+                cache[f"{symbol}@{heute}"] = d
