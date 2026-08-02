@@ -91,8 +91,13 @@ def schreibe():
             "regime": (regime.get(e.get("markt")) or {}).get("ampel"),
         })
 
-    # Beste zuerst: BREAKOUT vor ARMED, dann Pivot-Qualitaet.
-    rang = {"BREAKOUT": 1, "ARMED": 0}
+    # Beste zuerst: ARMED vor BREAKOUT, dann Pivot-Qualitaet. Bis 2026-08-02 war
+    # BREAKOUT vorn - der frische, unverzerrte Forward-Test (Signal-Hub/src/
+    # pivot_backtest.py --evaluate) zeigt aber ARMED bei 71% Win-Rate (n=83)
+    # gegen nur 34% bei BREAKOUT (n=90); der Retro-Backtest hatte BREAKOUT
+    # wegen Universums-Bias faelschlich gut aussehen lassen (siehe Bias-Hinweis
+    # in pivot_backtest.py). Bei genug neuen Forward-Daten erneut pruefen.
+    rang = {"ARMED": 1, "BREAKOUT": 0}
     setups.sort(key=lambda s: (rang.get(s["pivot_status"], 0), s["qualitaet"] or 0),
                 reverse=True)
     setups = setups[:MAX_SETUPS]
