@@ -367,6 +367,16 @@ function paQuickscan(m){
   return items.join('');
 }
 
+// Basis-URL der Hauptapp fuer Deeplinks (Trade-Planner): https-Zugriffe
+// (Cloudflare Pages ODER "tailscale serve") laufen bereits ueber Port 443 auf
+// demselben Origin wie die Hauptapp - kein :8090 noetig (bei Tailscale sogar
+// falsch, da dort nur 443 nach aussen exponiert ist). Nur reines http (LAN,
+// z.B. Mac-mini-von-Maick.local) braucht den expliziten Hauptapp-Port.
+function mtsHauptappBasis(){
+  if(location.protocol==='https:') return location.origin;
+  return `${location.protocol}//${location.hostname}:8090`;
+}
+
 function karte(t,rang){
   const m=t.muster||{};
   const eins=einstufFor(t.pa_score);
@@ -396,7 +406,7 @@ function karte(t,rang){
       <a href="https://www.tradingview.com/chart/?symbol=${tvSym}" target="_blank">📊 TradingView</a>
       <a href="https://finviz.com/quote.ashx?t=${encodeURIComponent((t.ticker||'').split('.')[0])}" target="_blank">Finviz</a>
       <a href="https://finance.yahoo.com/quote/${encodeURIComponent(t.yahoo_symbol||t.ticker)}" target="_blank">Yahoo</a>
-      ${location.protocol.startsWith('http')?`<a href="${location.protocol}//${location.hostname}:8090/${encodeURI("Maick's Trading System.html")}?neuerTrade=${encodeURIComponent(t.ticker)}&quelle=Price-Action-Hub" target="_blank" title="Trade-Planner in der Hauptapp öffnen, Ticker vorbefüllt (Quelle = Price-Action-Hub)">📈 Trade-Planner</a>`:''}
+      ${location.protocol.startsWith('http')?`<a href="${mtsHauptappBasis()}/${encodeURI("Maick's Trading System.html")}?neuerTrade=${encodeURIComponent(t.ticker)}&quelle=Price-Action-Hub" target="_blank" title="Trade-Planner in der Hauptapp öffnen, Ticker vorbefüllt (Quelle = Price-Action-Hub)">📈 Trade-Planner</a>`:''}
     </div>
   </div>`;
 }
