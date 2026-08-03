@@ -58,6 +58,13 @@
   .card:hover{transform:translateY(-3px);border-color:var(--primary2);
     box-shadow:0 12px 32px rgba(0,0,0,.4),0 0 0 1px rgba(244,179,80,.5)}
   .crow{display:flex;align-items:flex-start;gap:10px}
+  /* Sofort-Ueberblick (seit 2026-08-03, direkt auf jeder Karte sichtbar,
+     dieselbe Punkte-Optik wie Signal-Hub) - eigene Kennzahlen (Muster
+     bullish/bearish/nicht vorhanden), keine 1:1-Uebernahme der Score-Faktoren. */
+  .qscan{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:3px 8px}
+  .qscan .qi{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--muted);cursor:help;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;flex-shrink:0}
+  .d-gruen{background:var(--ok)} .d-gelb{background:var(--warn)} .d-rot{background:var(--bad)} .d-na{background:#3a4b60}
   .rank{font-size:12px;color:var(--muted);min-width:24px}
   .tick{font-size:19px;font-weight:800;letter-spacing:.5px}
   .name{font-size:12px;color:var(--muted);margin-top:1px}
@@ -330,6 +337,36 @@ function badgeStadium(m){
   return `<span class="stadium st-${st}" title="MA200 ${m.marktstadium.ma200}, Slope ${m.marktstadium.slope}">${st}</span>`;
 }
 
+// Sofort-Ueberblick: dieselbe Punkte-Optik wie Signal-Hub/setup-detail.html,
+// aber auf Price-Action-Hubs eigene Muster gemuenzt - anders als die Score-
+// Faktoren dort ist hier "kein Muster erkannt" (grau) der Normalfall, nicht
+// "schwach" (rot). gruen/rot = bullisch/baerisch AUSGEPRAEGT, gelb = zwar
+// vorhanden, aber schwaecher/unzuverlaessiger (Inside Bar, Failed Breakout,
+// gefuelltes Gap, unzuverlaessiges Bar-Counting).
+function qi(lbl,ampel,detail){ return `<div class="qi" title="${lbl}: ${detail}"><span class="dot d-${ampel}"></span>${lbl}</div>`; }
+function paQuickscan(m){
+  const tb=m.trend_bar||{};
+  const ib=m.inside_bar||{};
+  const bc=m.bar_counting||{};
+  const bo=m.breakout||{};
+  const g=m.gap||{};
+  const st=m.marktstadium&&m.marktstadium.stadium;
+  const items=[
+    qi('Trend-Bar', tb.stark?(tb.richtung==='bull'?'gruen':'rot'):'na',
+      tb.stark?`${tb.richtung==='bull'?'Starke Bull-Bar':'Starke Bär-Bar'} (Close-Pos ${Math.round(tb.close_pos*100)}%)`:'keine starke Trendbar'),
+    qi('Inside Bar', ib.inside?'gelb':'na', ib.inside?'Konsolidierung im Rahmen der Vorbar':'keine Inside Bar'),
+    qi('Bar-Counting', bc.typ?(bc.zuverlaessig?(bc.typ.startsWith('High')?'gruen':'rot'):'gelb'):'na',
+      bc.typ?`${bc.typ} (${bc.seit_swing_bars} Bars seit Swing${bc.zuverlaessig?', zuverlässig':', spät'})`:'kein Bar-Counting-Signal'),
+    qi('Breakout', (bo.breakout_up||bo.breakout_down)?(bo.failed?'gelb':(bo.breakout_up?'gruen':'rot')):'na',
+      (bo.breakout_up||bo.breakout_down)?`Breakout ${bo.breakout_up?'↑':'↓'}${bo.failed?' (failed)':''}`:'kein Breakout'),
+    qi('Gap', (g.gap_up||g.gap_down)?(g.gefuellt?'gelb':(g.gap_up?'gruen':'rot')):'na',
+      (g.gap_up||g.gap_down)?`Gap ${g.gap_pct>0?'+':''}${g.gap_pct}%${g.gefuellt?' (gefüllt)':''}`:'kein Gap'),
+    qi('Marktstadium', st==='Advancing'||st==='Accumulation'?'gruen':st==='Distribution'?'gelb':st==='Declining'?'rot':'na',
+      st?`${st} (MA200 ${m.marktstadium.ma200}, Slope ${m.marktstadium.slope})`:'kein Marktstadium ermittelt'),
+  ];
+  return items.join('');
+}
+
 function karte(t,rang){
   const m=t.muster||{};
   const eins=einstufFor(t.pa_score);
@@ -347,6 +384,7 @@ function karte(t,rang){
         <span class="einstuf ${eins.cls}">${eins.txt}</span>
       </div>
     </div>
+    <div class="qscan">${paQuickscan(m)}</div>
     ${candlechart(t.chart)}
     <div style="display:flex;justify-content:space-between;align-items:center">
       ${badgeStadium(m)}
