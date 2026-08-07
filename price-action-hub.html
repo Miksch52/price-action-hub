@@ -403,6 +403,7 @@ function karte(t,rang){
       ${badgeTrend(m)}${badgeInside(m)}${badgeBarCounting(m)}${badgeBreakout(m)}${badgeGap(m)}
     </div>
     <div class="links">
+      <a href="../Signal-Hub/setup-detail.html?ticker=${encodeURIComponent(t.ticker)}" target="_blank" title="Setup-Analyse: alle Score-Faktoren, Pivot-Kennzahlen, Price-Action-Muster, TradingView-Chart, Fundamentaldaten &amp; Story für diesen Ticker">🔍 Setup-Analyse</a>
       <a href="https://www.tradingview.com/chart/?symbol=${tvSym}" target="_blank">📊 TradingView</a>
       <a href="https://finviz.com/quote.ashx?t=${encodeURIComponent((t.ticker||'').split('.')[0])}" target="_blank">Finviz</a>
       <a href="https://finance.yahoo.com/quote/${encodeURIComponent(t.yahoo_symbol||t.ticker)}" target="_blank">Yahoo</a>
