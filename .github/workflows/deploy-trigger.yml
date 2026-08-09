@@ -1,0 +1,30 @@
+name: Deploy nach Cloudflare Pages anstossen
+
+# Dieses Repo hat sonst keinen eigenen Workflow (siehe CLAUDE.md) - der
+# normale Cloud-Weg laeuft ueber Signal-Hubs pipeline.yml, das nach jedem
+# 4x/Tag-Lauf automatisch den Deploy im Hauptrepo (Miksch52/maick-trading-
+# system) anstoesst. Ein reiner Edit an price-action-hub.html allein (ohne
+# gleichzeitige Signal-Hub-Aenderung) blieb dadurch bis zu 6 Stunden lang
+# undeployt - aufgefallen am 2026-08-09 beim Rotation-Dashboard-Pendant
+# dieses Workflows. Schliesst die Luecke: jeder Push auf main stoesst den
+# Deploy direkt an, unabhaengig vom naechsten Signal-Hub-Zyklus.
+#
+# Braucht dasselbe Secret DEPLOY_TRIGGER_TOKEN wie Signal-Hub (fine-grained
+# PAT mit "Actions: Read and write" auf Miksch52/maick-trading-system) -
+# derselbe Token-WERT, hier als eigenes Secret in diesem Repo hinterlegt
+# (gh secret set DEPLOY_TRIGGER_TOKEN --repo Miksch52/price-action-hub).
+on:
+  push:
+    branches: [main]
+
+jobs:
+  trigger-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy im Hauptrepo (Miksch52/maick-trading-system) anstossen
+        run: |
+          curl -sS -f -X POST \
+            -H "Authorization: Bearer ${{ secrets.DEPLOY_TRIGGER_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/Miksch52/maick-trading-system/actions/workflows/deploy.yml/dispatches \
+            -d '{"ref":"main"}'
