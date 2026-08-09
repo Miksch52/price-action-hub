@@ -37,6 +37,17 @@ PRICEACTION_JS = os.path.join(DATA, "priceaction.js")
 # geschrieben hat (Signal-Hub/data/ ist komplett .gitignore't).
 SIGNAL_HUB_SIGNALS_JSON = os.path.join(REPO_ROOT, "Signal-Hub", "data", "signals.json")
 
+# Gleiches Prinzip fuer den ntfy-Kanal des Top-Setups-Push (top_setups.py):
+# reiner Datei-Read von Signal-Hub/config.json, kein Cross-App-Python-Import
+# (siehe mts_alarms.py im Hauptrepo fuer dasselbe Muster). Lokal existiert
+# die Datei als Geschwister-Ordner immer; im Cloud-Job schreibt ein eigener
+# Pipeline-Schritt sie aus dem SIGNALHUB_CONFIG_JSON-Secret dorthin.
+SIGNAL_HUB_CONFIG = os.path.join(REPO_ROOT, "Signal-Hub", "config.json")
+
 LOKAL = os.path.expanduser("~/Library/Application Support/PriceActionHub")
 os.makedirs(LOKAL, exist_ok=True)
 YAHOO_CACHE = os.path.join(LOKAL, "yahoo_cache.json")
+# Anti-Spam-Zustand des Top-Setups-Push (welche Ticker waren beim letzten
+# Lauf schon in der Schnittmenge) - im Cloud-Job per R2 gesichert, sonst wie
+# yahoo_cache.json bei jedem frischen Checkout leer.
+TOP_SETUPS_STATE = os.path.join(LOKAL, "top_setups_state.json")
