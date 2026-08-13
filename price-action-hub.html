@@ -47,6 +47,12 @@
   .chip{font-size:12px;padding:3px 9px;border-radius:20px;border:1px solid var(--line);
         color:var(--muted);cursor:pointer;user-select:none;background:var(--bg2)}
   .chip.on{background:var(--primary);color:#fff;border-color:var(--primary)}
+  /* Tri-State-Chips (aus/aktiv/negativ) fuer die Qualitaetsfilter (2026-08-13):
+     Klick zyklt aus -> aktiv (gruen, muss zutreffen) -> negativ (rot, darf nicht
+     zutreffen) -> aus. Andere Farbcodierung als .on (Primaerfarbe) bewusst, damit
+     aktiv/negativ optisch klar unterscheidbar bleiben. */
+  .chip.state-plus{background:var(--ok);color:#fff;border-color:var(--ok)}
+  .chip.state-minus{background:var(--bad);color:#fff;border-color:var(--bad)}
 
   main{padding:18px 20px;max-width:1400px;margin:0 auto}
   .legend{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:12px}
@@ -142,6 +148,8 @@
     </select>
     <label class="slabel">Min. |Score| <b id="minlbl">2</b>
       <input type="range" id="minscore" min="0" max="6" value="2" step="0.5"></label>
+    <label class="slabel" title="Anzahl gleichzeitig in dieselbe Richtung zeigender Signale (Trendbar, Bar-Counting, Breakout, Gap, Marktstadium) — je höher, desto mehr Bestätigung">Min. Konfluenz <b id="konflbl">0</b>
+      <input type="range" id="minkonfluenz" min="0" max="5" value="0" step="1"></label>
     <select id="stadium">
       <option value="alle">Marktstadium: Alle</option>
       <option value="Advancing">Advancing</option>
@@ -149,9 +157,24 @@
       <option value="Distribution">Distribution</option>
       <option value="Declining">Declining</option>
     </select>
+    <select id="minliq" title="Durchschnittliches Handelsvolumen der letzten 20 Tage in USD/EUR — filtert marktenge, schwer handelbare Titel raus">
+      <option value="0" selected>Ø Volumen: Alle</option>
+      <option value="1000000">≥ 1 Mio./Tag</option>
+      <option value="5000000">≥ 5 Mio./Tag</option>
+      <option value="10000000">≥ 10 Mio./Tag</option>
+      <option value="25000000">≥ 25 Mio./Tag</option>
+    </select>
+    <select id="abstandhoch" title="Abstand des aktuellen Kurses vom höchsten Hoch der letzten ~6 Monate — echte Momentum-Titel stehen nah am Hoch">
+      <option value="100" selected>Abstand 6M-Hoch: Alle</option>
+      <option value="5">≤ 5% vom Hoch</option>
+      <option value="10">≤ 10% vom Hoch</option>
+      <option value="15">≤ 15% vom Hoch</option>
+      <option value="20">≤ 20% vom Hoch</option>
+    </select>
     <select id="sortby">
       <option value="score" selected>Sortierung: Score</option>
       <option value="abs">Sortierung: Signalstärke (|Score|)</option>
+      <option value="konfluenz">Sortierung: Konfluenz</option>
       <option value="alpha">Sortierung: A–Z (Ticker)</option>
     </select>
     <input type="search" id="suche" placeholder="🔎 Ticker / Name / Börse (mehrere möglich)">
@@ -163,8 +186,15 @@
       <span class="chip" data-k="inside">📥 Inside Bar</span>
       <span class="chip" data-k="barcounting">📐 Bar-Counting (zuverlässig)</span>
       <span class="chip" data-k="breakout">🚀 Breakout</span>
-      <span class="chip" data-k="failed">⛔ Failed Breakout</span>
       <span class="chip" data-k="gap">↕️ Gap</span>
+     </div>
+    </div>
+    <div class="fgroup">
+     <div class="fgroup-label">Qualität – Klick: aus → aktiv (grün, muss zutreffen) → negativ (rot, darf nicht zutreffen)</div>
+     <div class="chips" id="qualchips">
+      <span class="chip" data-k="volbest" title="Breakout mit Vol-Ratio ≥ 1.5x">📊 Volumen-bestätigter Breakout</span>
+      <span class="chip" data-k="failed" title="Ausbruch binnen 5 Bars wieder zurück ins Referenzband">⛔ Failed Breakout</span>
+      <span class="chip" data-k="trendkonform" title="Alle aktiven Muster stimmen mit dem Marktstadium überein (keine gegenläufigen Signale)">🎯 Trendkonform</span>
      </div>
     </div>
    </div>
@@ -182,6 +212,10 @@
     <span><span class="badge badge-failed">⛔ Failed</span> Ausbruch binnen 5 Bars gescheitert</span>
     <span><span class="badge">↕️ Gap</span> Kurslücke zum Vortag</span>
     <span><span class="stadium st-Advancing">Advancing</span> Aufwärtstrend (Preis &gt; MA200, steigend)</span>
+    <span>🔗 Konfluenz: wie viele der 5 richtungsgebenden Signale (Trendbar, Bar-Counting, Breakout, Gap, Marktstadium) gleichzeitig in dieselbe Richtung zeigen (0–5)</span>
+    <span>Qualitäts-Chips (Klick zyklt): <span class="chip state-plus" style="pointer-events:none">aktiv</span> muss zutreffen · <span class="chip state-minus" style="pointer-events:none">negativ</span> darf nicht zutreffen — Volumen-bestätigter Breakout (Vol-Ratio ≥1.5x), Failed Breakout, Trendkonform (alle aktiven Muster passen zum Marktstadium)</span>
+    <span>Ø Volumen: durchschnittliches Handelsvolumen (Kurs × Stück) der letzten 20 Tage — filtert marktenge Titel</span>
+    <span>Abstand 6M-Hoch: % Abstand des aktuellen Kurses vom höchsten Hoch der letzten ~6 Monate</span>
     <span>Kerzen: <i style="background:#2FB08D"></i>bullisch <i style="background:#E74C3C"></i>bärisch</span>
     <span>Standardansicht: 📈 bullisch, Min. |Score| 2 (stärkste Werte) — ↺ Zurücksetzen stellt das wieder her</span>
    </div>
@@ -214,17 +248,87 @@ let CURRENT_LIST=[], RENDER_LIMIT=PAGE_SIZE;
 // Standard-Ansicht: bullisch + stärkste Werte (Min. |Score| 2 -> ca. die
 // staerksten ~100 von ~1300 Tickern), damit das Dashboard nicht ungefiltert
 // mit 1300 neutralen Treffern startet. ↺ Zurücksetzen stellt genau das wieder her.
-const DEFAULT_STATE={markt:"alle",richtung:"bull",minscore:2,sort:"score",suche:"",muster:new Set(),stadium:"alle"};
-let state={...DEFAULT_STATE,muster:new Set()};
+const DEFAULT_STATE={markt:"alle",richtung:"bull",minscore:2,sort:"score",suche:"",muster:new Set(),qualitaet:new Map(),stadium:"alle",minliq:0,abstandhoch:100,minkonfluenz:0};
+let state={...DEFAULT_STATE,muster:new Set(),qualitaet:new Map()};
 
 const MUSTER_CHECK={
   trend: m=>!!(m.trend_bar&&m.trend_bar.stark),
   inside: m=>!!(m.inside_bar&&m.inside_bar.inside),
   barcounting: m=>!!(m.bar_counting&&m.bar_counting.zuverlaessig),
   breakout: m=>!!(m.breakout&&(m.breakout.breakout_up||m.breakout.breakout_down)&&!m.breakout.failed),
-  failed: m=>!!(m.breakout&&m.breakout.failed),
   gap: m=>!!(m.gap&&(m.gap.gap_up||m.gap.gap_down)),
 };
+
+// Tri-State-Qualitaetsfilter (2026-08-13, aus/aktiv/negativ statt nur
+// "muss vorhanden sein" wie bei MUSTER_CHECK): jede Funktion liefert IMMER
+// ein Bool (nie null), damit "negativ" (= muss false sein) eindeutig ist --
+// ein Ticker ohne Breakout gilt fuer volbest z.B. schlicht als false, nicht
+// als "nicht anwendbar".
+function istTrendkonform(m){
+  const st=m.marktstadium&&m.marktstadium.stadium;
+  if(!st) return false;
+  const bullKontext=st==="Advancing"||st==="Accumulation", bearKontext=st==="Distribution"||st==="Declining";
+  const signale=[];
+  const tb=m.trend_bar||{}; if(tb.stark) signale.push(tb.richtung);
+  const bc=m.bar_counting||{}; if(bc.zuverlaessig&&bc.typ) signale.push(bc.typ.startsWith("High")?"bull":"bear");
+  const bo=m.breakout||{}; if(bo.breakout_up) signale.push("bull"); else if(bo.breakout_down) signale.push("bear");
+  const g=m.gap||{}; if(g.gap_up) signale.push("bull"); else if(g.gap_down) signale.push("bear");
+  if(!signale.length) return false;
+  return signale.every(s=>s==="bull"?bullKontext:bearKontext);
+}
+const QUALITAET_CHECK={
+  volbest: m=>{
+    const bo=m.breakout; if(!bo||(!bo.breakout_up&&!bo.breakout_down)) return false;
+    const vr=bo.staerke&&bo.staerke.vol_ratio;
+    return vr!=null&&vr>=1.5;
+  },
+  failed: m=>!!(m.breakout&&m.breakout.failed),
+  trendkonform: m=>istTrendkonform(m),
+};
+
+// Neue Qualitaets-/Konfluenzfilter (2026-08-13), rein clientseitig aus den
+// ohnehin schon im Payload enthaltenen chart-Arrays (o/h/l/c/v) und den
+// bestehenden Musterfeldern berechnet -- kein neuer Pipeline-Lauf noetig.
+// Pro Ticker einmalig in vorberechnen() ermittelt (nicht bei jedem
+// Filterwechsel neu), da render() bei jeder Slider-Bewegung ueber die
+// gesamte Trefferliste laeuft.
+function liquiditaet(t){
+  const ch=t.chart; if(!ch||!ch.c||!ch.v||!ch.c.length) return null;
+  const n=ch.c.length, fenster=Math.min(20,n);
+  let sum=0,cnt=0;
+  for(let i=n-fenster;i<n;i++){
+    if(ch.c[i]!=null&&ch.v[i]!=null){ sum+=ch.c[i]*ch.v[i]*1000; cnt++; }
+  }
+  return cnt?sum/cnt:null;
+}
+function abstandVomHoch(t){
+  const ch=t.chart; if(!ch||!ch.h||!ch.h.length||!t.preis) return null;
+  const hs=ch.h.filter(x=>x!=null); if(!hs.length) return null;
+  const hoch=Math.max(...hs);
+  return hoch>0?(hoch-t.preis)/hoch*100:null;
+}
+function konfluenz(t){
+  const m=t.muster||{}; const dir=t.pa_score>0?'bull':t.pa_score<0?'bear':null;
+  if(!dir) return 0;
+  const tb=m.trend_bar||{}, bc=m.bar_counting||{}, bo=m.breakout||{}, g=m.gap||{};
+  const st=m.marktstadium&&m.marktstadium.stadium;
+  let n=0;
+  if(tb.stark&&tb.richtung===dir) n++;
+  if(bc.zuverlaessig&&bc.typ&&((bc.typ.startsWith('High')?'bull':'bear')===dir)) n++;
+  if(dir==='bull'?(bo.breakout_up&&!bo.failed):(bo.breakout_down&&!bo.failed)) n++;
+  if(dir==='bull'?(g.gap_up&&!g.gefuellt):(g.gap_down&&!g.gefuellt)) n++;
+  if(st&&(dir==='bull'?(st==='Advancing'||st==='Accumulation'):(st==='Distribution'||st==='Declining'))) n++;
+  return n;
+}
+function vorberechnen(){
+  (DATA.treffer||[]).forEach(t=>{
+    t._liq=liquiditaet(t);
+    t._abstandHoch=abstandVomHoch(t);
+    t._konfluenz=konfluenz(t);
+    const m=t.muster||{};
+    t._qual={volbest:QUALITAET_CHECK.volbest(m),failed:QUALITAET_CHECK.failed(m),trendkonform:QUALITAET_CHECK.trendkonform(m)};
+  });
+}
 
 /* ---- Cloud-Workflow-Trigger (identisch zu Signal-Hub, 1:1 kopiert -
    Single-File-App-Prinzip). Startet denselben signal-hub.yml-Workflow,
@@ -392,6 +496,7 @@ function karte(t,rang){
       <div class="scorebox">
         <div class="score" style="color:${scoreColor(t.pa_score)}">${t.pa_score}</div>
         <span class="einstuf ${eins.cls}">${eins.txt}</span>
+        ${t._konfluenz?`<div class="name" title="Konfluenz: ${t._konfluenz} von 5 Signalen (Trendbar, Bar-Counting, Breakout, Gap, Marktstadium) zeigen gleichzeitig in dieselbe Richtung">🔗 ${t._konfluenz}/5</div>`:''}
       </div>
     </div>
     <div class="qscan">${paQuickscan(m)}</div>
@@ -417,6 +522,8 @@ function updateFilterCount(n){
   let c=0;
   if(state.markt!=="alle")c++; if(state.richtung!=="alle")c++; if(state.minscore>0)c++; if(state.suche)c++;
   if(state.muster.size)c++; if(state.stadium!=="alle")c++;
+  if(state.minliq>0)c++; if(state.abstandhoch<100)c++; if(state.minkonfluenz>0)c++;
+  if(state.qualitaet.size)c++;
   el.textContent=`· ${n} Treffer${c?` · ${c} Filter aktiv`:''}`;
 }
 
@@ -428,6 +535,15 @@ function render(){
   if(state.minscore>0) list=list.filter(t=>Math.abs(t.pa_score)>=state.minscore);
   if(state.stadium!=="alle") list=list.filter(t=>t.muster&&t.muster.marktstadium&&t.muster.marktstadium.stadium===state.stadium);
   if(state.muster.size) list=list.filter(t=>[...state.muster].every(k=>MUSTER_CHECK[k](t.muster||{})));
+  if(state.minliq>0) list=list.filter(t=>t._liq!=null&&t._liq>=state.minliq);
+  if(state.abstandhoch<100) list=list.filter(t=>t._abstandHoch!=null&&t._abstandHoch<=state.abstandhoch);
+  if(state.minkonfluenz>0) list=list.filter(t=>(t._konfluenz||0)>=state.minkonfluenz);
+  if(state.qualitaet.size){
+    for(const [k,v] of state.qualitaet){
+      if(v==="plus") list=list.filter(t=>t._qual&&t._qual[k]===true);
+      else if(v==="minus") list=list.filter(t=>t._qual&&t._qual[k]===false);
+    }
+  }
   if(state.suche){
     // mehrere durch Komma/Leerzeichen getrennte Suchbegriffe -> ODER-Verknuepfung
     // (z.B. "AAPL MSFT" findet beide), Suche jetzt zusaetzlich ueber die Boerse.
@@ -441,6 +557,7 @@ function render(){
   }
 
   if(state.sort==="abs") list.sort((a,b)=>Math.abs(b.pa_score)-Math.abs(a.pa_score));
+  else if(state.sort==="konfluenz") list.sort((a,b)=>(b._konfluenz||0)-(a._konfluenz||0)||b.pa_score-a.pa_score);
   else if(state.sort==="alpha") list.sort((a,b)=>a.ticker.localeCompare(b.ticker));
   else list.sort((a,b)=>b.pa_score-a.pa_score);
 
@@ -481,7 +598,10 @@ document.getElementById('marktseg').addEventListener('click',e=>{
 });
 document.getElementById('richtung').addEventListener('change',e=>{state.richtung=e.target.value;render();});
 document.getElementById('minscore').addEventListener('input',e=>{state.minscore=parseFloat(e.target.value);document.getElementById('minlbl').textContent=e.target.value;render();});
+document.getElementById('minkonfluenz').addEventListener('input',e=>{state.minkonfluenz=parseInt(e.target.value,10);document.getElementById('konflbl').textContent=e.target.value;render();});
 document.getElementById('stadium').addEventListener('change',e=>{state.stadium=e.target.value;render();});
+document.getElementById('minliq').addEventListener('change',e=>{state.minliq=parseFloat(e.target.value);render();});
+document.getElementById('abstandhoch').addEventListener('change',e=>{state.abstandhoch=parseFloat(e.target.value);render();});
 document.getElementById('sortby').addEventListener('change',e=>{state.sort=e.target.value;render();});
 document.getElementById('suche').addEventListener('input',e=>{state.suche=e.target.value;render();});
 document.getElementById('musterchips').addEventListener('click',e=>{
@@ -491,21 +611,37 @@ document.getElementById('musterchips').addEventListener('click',e=>{
   else{ state.muster.add(k); c.classList.add('on'); }
   render();
 });
+document.getElementById('qualchips').addEventListener('click',e=>{
+  const c=e.target.closest('.chip'); if(!c) return;
+  const k=c.dataset.k;
+  const aktuell=state.qualitaet.get(k);
+  c.classList.remove('state-plus','state-minus');
+  if(aktuell===undefined){ state.qualitaet.set(k,'plus'); c.classList.add('state-plus'); }
+  else if(aktuell==='plus'){ state.qualitaet.set(k,'minus'); c.classList.add('state-minus'); }
+  else{ state.qualitaet.delete(k); }
+  render();
+});
 document.getElementById('resetbtn').addEventListener('click',()=>{
-  state={...DEFAULT_STATE,muster:new Set()};
+  state={...DEFAULT_STATE,muster:new Set(),qualitaet:new Map()};
   [...document.getElementById('marktseg').children].forEach(x=>x.classList.toggle('active',x.dataset.m==='alle'));
   document.getElementById('richtung').value=state.richtung;
   document.getElementById('minscore').value=state.minscore;
   document.getElementById('minlbl').textContent=state.minscore;
+  document.getElementById('minkonfluenz').value=state.minkonfluenz;
+  document.getElementById('konflbl').textContent=state.minkonfluenz;
   document.getElementById('stadium').value=state.stadium;
+  document.getElementById('minliq').value=state.minliq;
+  document.getElementById('abstandhoch').value=state.abstandhoch;
   document.getElementById('sortby').value=state.sort;
   document.getElementById('suche').value='';
   document.querySelectorAll('#musterchips .chip').forEach(c=>c.classList.remove('on'));
+  document.querySelectorAll('#qualchips .chip').forEach(c=>c.classList.remove('state-plus','state-minus'));
   render();
 });
 
 (async function init(){
   await ladeDaten();
+  vorberechnen();
   render();
 })();
 </script>
