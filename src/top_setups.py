@@ -187,6 +187,10 @@ def schreibe():
             "stop": p.get("stop"),
             # naechster Earnings-Termin in Tagen (Frontend wendet warnTage() an)
             "earnings_tage": earn.get("tage") if earn.get("status") == "termin" else None,
+            # Uebernahme-Heuristik aus Signal-Hub/scorer.py::f_fundamental()
+            # (Analysten-Kursziel nah am aktuellen Kurs) - Frontend gated
+            # genauso wie bei Earnings-Sperre, kein harter Filter hier.
+            "moegliche_uebernahme": bool(e.get("moegliche_uebernahme")),
             "regime": (regime.get(e.get("markt")) or {}).get("ampel"),
         })
 
