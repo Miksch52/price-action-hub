@@ -32,6 +32,12 @@
   .filterbox[open] .filtersum{border-bottom:1px solid var(--line)}
   .filterbox .controls{margin:0;padding:12px}
   .filtercount{color:var(--primary);font-weight:700;font-size:12px}
+  /* Vorausschau-Zaehler auf den Filter-Chips (2026-08-16): "wie viele Treffer
+     haette ich mit GENAU diesem Filter allein" - unabhaengig von anderen
+     aktiven Filtern (gleiches Prinzip wie pivotcount/topsetcount/hebelcount
+     im Signal-Hub), berechnet einmalig gegen den vollen Datensatz. */
+  .ccount{font-weight:400;opacity:.75;font-size:10.5px}
+  .chip.on .ccount,.chip.state-plus .ccount,.chip.state-minus .ccount{opacity:.9}
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .seg button{background:transparent;color:var(--muted);border:0;padding:6px 12px;cursor:pointer;font-size:13px}
   .seg button.active{background:var(--primary);color:#fff;box-shadow:0 0 14px rgba(244,179,80,.35)}
@@ -193,19 +199,19 @@
     <div class="fgroup">
      <div class="fgroup-label">Muster – muss vorhanden sein</div>
      <div class="chips" id="musterchips">
-      <span class="chip" data-k="trend">💪 Starke Trendbar</span>
-      <span class="chip" data-k="inside">📥 Inside Bar</span>
-      <span class="chip" data-k="barcounting">📐 Bar-Counting (zuverlässig)</span>
-      <span class="chip" data-k="breakout">🚀 Breakout</span>
-      <span class="chip" data-k="gap">↕️ Gap</span>
+      <span class="chip" data-k="trend">💪 Starke Trendbar <b class="ccount" data-ccount="trend"></b></span>
+      <span class="chip" data-k="inside">📥 Inside Bar <b class="ccount" data-ccount="inside"></b></span>
+      <span class="chip" data-k="barcounting">📐 Bar-Counting (zuverlässig) <b class="ccount" data-ccount="barcounting"></b></span>
+      <span class="chip" data-k="breakout">🚀 Breakout <b class="ccount" data-ccount="breakout"></b></span>
+      <span class="chip" data-k="gap">↕️ Gap <b class="ccount" data-ccount="gap"></b></span>
      </div>
     </div>
     <div class="fgroup">
      <div class="fgroup-label">Qualität – Klick: aus → aktiv (grün, muss zutreffen) → negativ (rot, darf nicht zutreffen)</div>
      <div class="chips" id="qualchips">
-      <span class="chip" data-k="volbest" title="Breakout mit Vol-Ratio ≥ 1.5x">📊 Volumen-bestätigter Breakout</span>
-      <span class="chip" data-k="failed" title="Ausbruch binnen 5 Bars wieder zurück ins Referenzband">⛔ Failed Breakout</span>
-      <span class="chip" data-k="trendkonform" title="Alle aktiven Muster stimmen mit dem Marktstadium überein (keine gegenläufigen Signale)">🎯 Trendkonform</span>
+      <span class="chip" data-k="volbest" title="Breakout mit Vol-Ratio ≥ 1.5x">📊 Volumen-bestätigter Breakout <b class="ccount" data-ccount="volbest"></b></span>
+      <span class="chip" data-k="failed" title="Ausbruch binnen 5 Bars wieder zurück ins Referenzband">⛔ Failed Breakout <b class="ccount" data-ccount="failed"></b></span>
+      <span class="chip" data-k="trendkonform" title="Alle aktiven Muster stimmen mit dem Marktstadium überein (keine gegenläufigen Signale)">🎯 Trendkonform <b class="ccount" data-ccount="trendkonform"></b></span>
      </div>
     </div>
    </div>
@@ -225,6 +231,7 @@
     <span><span class="stadium st-Advancing">Advancing</span> Aufwärtstrend (Preis &gt; MA200, steigend)</span>
     <span>🔗 Konfluenz: wie viele der 5 richtungsgebenden Signale (Trendbar, Bar-Counting, Breakout, Gap, Marktstadium) gleichzeitig in dieselbe Richtung zeigen (0–5)</span>
     <span>Qualitäts-Chips (Klick zyklt): <span class="chip state-plus" style="pointer-events:none">aktiv</span> muss zutreffen · <span class="chip state-minus" style="pointer-events:none">negativ</span> darf nicht zutreffen — Volumen-bestätigter Breakout (Vol-Ratio ≥1.5x), Failed Breakout, Trendkonform (alle aktiven Muster passen zum Marktstadium)</span>
+    <span>Zahl hinter Muster-/Qualitäts-Chips und im Marktstadium-Dropdown: Vorausschau — wie viele Ticker im <em>gesamten</em> Datensatz dieses eine Kriterium erfüllen, unabhängig von sonst aktiven Filtern</span>
     <span>Ø Volumen: durchschnittliches Handelsvolumen (Kurs × Stück) der letzten 20 Tage — filtert marktenge Titel</span>
     <span>Abstand 6M-Hoch: % Abstand des aktuellen Kurses vom höchsten Hoch der letzten ~6 Monate</span>
     <span>Kerzen: <i style="background:#2FB08D"></i>bullisch <i style="background:#E74C3C"></i>bärisch</span>
@@ -340,6 +347,32 @@ function vorberechnen(){
     t._konfluenz=konfluenz(t);
     const m=t.muster||{};
     t._qual={volbest:QUALITAET_CHECK.volbest(m),failed:QUALITAET_CHECK.failed(m),trendkonform:QUALITAET_CHECK.trendkonform(m)};
+  });
+}
+
+// Vorausschau-Zaehler (2026-08-16): fuellt die <b class="ccount"> in den
+// Muster-/Qualitaets-Chips und die Marktstadium-Optionen mit "wie viele
+// Treffer im GESAMTEN Datensatz erfuellen GENAU dieses Kriterium" - einmalig
+// nach dem Laden berechnet (aendert sich nicht mit anderen Filtern, exakt
+// wie pivotcount/topsetcount/hebelcount im Signal-Hub).
+function updateChipCounts(){
+  const alle=DATA.treffer||[];
+  document.querySelectorAll('#musterchips .ccount').forEach(el=>{
+    const k=el.dataset.ccount;
+    const n=alle.filter(t=>MUSTER_CHECK[k](t.muster||{})).length;
+    el.textContent=`· ${n}`;
+  });
+  document.querySelectorAll('#qualchips .ccount').forEach(el=>{
+    const k=el.dataset.ccount;
+    const n=alle.filter(t=>t._qual&&t._qual[k]===true).length;
+    el.textContent=`· ${n}`;
+  });
+  const stadien={};
+  alle.forEach(t=>{const st=t.muster&&t.muster.marktstadium&&t.muster.marktstadium.stadium; if(st) stadien[st]=(stadien[st]||0)+1;});
+  document.querySelectorAll('#stadium option[value]').forEach(opt=>{
+    if(opt.value==='alle') return;
+    const n=stadien[opt.value]||0;
+    opt.textContent=`${opt.value} · ${n}`;
   });
 }
 
@@ -672,6 +705,7 @@ document.getElementById('resetbtn').addEventListener('click',()=>{
 (async function init(){
   await ladeDaten();
   vorberechnen();
+  updateChipCounts();
   render();
 })();
 </script>
