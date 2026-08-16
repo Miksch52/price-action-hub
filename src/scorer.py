@@ -3,12 +3,18 @@
 """
 Scorer fuer den Price-Action-Hub.
 
-Liest die Ticker-Universe des Signal-Hub NUR aus dessen Ausgabedatei
-(Symbol/Name/Markt, KEINE Scores/Faktoren -- Entflechtung, siehe
-pfade.py-Docstring), holt dafuer eigenstaendig echtes OHLC ueber
-kursdaten.py und wendet muster.analysiere() an. Der resultierende
-Price-Action-Score dient nur der Dashboard-Sortierung, ist kein Ersatz
-fuer den Signal-Hub-Momentum-Score.
+Liest die Ticker-Universe des Signal-Hub aus dessen Ausgabedatei (Symbol/
+Name/Markt -- Entflechtung, siehe pfade.py-Docstring), holt dafuer
+eigenstaendig echtes OHLC ueber kursdaten.py und wendet muster.analysiere()
+an. Der resultierende Price-Action-Score dient nur der Dashboard-Sortierung,
+ist kein Ersatz fuer den Signal-Hub-Momentum-Score.
+
+Seit 2026-08-16 zusaetzlich: ein eng begrenztes Set an fertigen Signal-Hub-
+Ampelfeldern je Ticker (Stage-2-Trend, Basis/VCP, Extended, Earnings, 50/80,
+Klimax, Marktregime) + der Pivot-Status aus SIGNAL_HUB_PIVOT_JSON werden
+durchgereicht und zur Hebel-Ampel (hebel_ampel()) kombiniert - reines
+Zusammenfuehren bereits fertiger Werte, keine Neuberechnung (siehe
+pfade.py-Docstring fuer die Begruendung dieser gezielten Ausnahme).
 
 Ausgabe: data/priceaction.json (+ data/priceaction.js fuers Dashboard
 ueber file://).
@@ -29,10 +35,13 @@ CHART_FENSTER = 126  # ~6 Monate, konsistent mit Signal-Hub-Minichart-Fenster
 
 
 def lade_tickerliste():
-    """Nur Symbol/Name/Markt aus signals.json -- keine Scores uebernehmen."""
+    """Symbol/Name/Markt aus signals.json, PLUS (seit 2026-08-16, siehe
+    pfade.py-Docstring) ein gezielt eng begrenztes Set an bereits fertigen
+    Hebel-Ampel-Feldern je Ticker -- reines Durchreichen, keine Neuberechnung.
+    """
     if not os.path.exists(pfade.SIGNAL_HUB_SIGNALS_JSON):
         print(f"Keine Signal-Hub-Daten gefunden ({pfade.SIGNAL_HUB_SIGNALS_JSON}) - nichts zu tun.")
-        return [], None
+        return [], None, {}
     with open(pfade.SIGNAL_HUB_SIGNALS_JSON, encoding="utf-8") as f:
         d = json.load(f)
     ticker = []
@@ -42,14 +51,83 @@ def lade_tickerliste():
         if not symbol or symbol in gesehen:
             continue
         gesehen.add(symbol)
+        fak = t.get("faktoren") or {}
         ticker.append({
             "ticker": t.get("ticker"),
             "yahoo_symbol": symbol,
             "name": t.get("name"),
             "markt": t.get("markt"),
             "exchange": t.get("exchange"),
+            "_hebel_kontext": {
+                "stage2_ampel": (fak.get("stage2_trend") or {}).get("ampel"),
+                "basis_ampel": (fak.get("basis_konsolidierung") or {}).get("ampel"),
+                "extended_pct": t.get("extended_pct"),
+                "earnings": t.get("earnings"),
+                "minervini_5080": t.get("minervini_5080"),
+                "klimax_warnung": t.get("klimax_warnung"),
+            },
         })
-    return ticker, d.get("erstellt")
+    return ticker, d.get("erstellt"), (d.get("marktregime") or {})
+
+
+def lade_pivotmap():
+    """Pivot-Status (ARMED/BREAKOUT) je Ticker - gleiche Quelle wie
+    top_setups.py, hier zusaetzlich fuer die Hebel-Ampel gebraucht."""
+    if not os.path.exists(pfade.SIGNAL_HUB_PIVOT_JSON):
+        return {}
+    try:
+        with open(pfade.SIGNAL_HUB_PIVOT_JSON, encoding="utf-8") as f:
+            d = json.load(f)
+        return {e.get("ticker"): e.get("pivot_status") for e in d.get("treffer", [])}
+    except Exception:
+        return {}
+
+
+def lade_warn_tage():
+    """earnings.warn_tage aus Signal-Hub/config.json (reiner Datei-Read,
+    gleiche Quelle, die signal-hub.html clientseitig ueber CONFIG liest) -
+    damit die Earnings-Schwelle in beiden Apps aus demselben Wert kommt,
+    statt in Python hart kodiert zu sein und irgendwann auseinanderzulaufen."""
+    try:
+        with open(pfade.SIGNAL_HUB_CONFIG, encoding="utf-8") as f:
+            return (json.load(f).get("earnings") or {}).get("warn_tage") or 10
+    except Exception:
+        return 10
+
+
+def hebel_ampel(kontext, markt, regime, pivot_status, warn_tage):
+    """Hebel-Trade-Reife-Ampel (2026-08-16): identische Kriterien wie
+    Signal-Hub/signal-hub.html::hebelAmpel() - bei Aenderungen HIER immer
+    auch DORT nachziehen (kein Cross-App-Import moeglich).
+
+    gruen nur, wenn ALLE Kriterien erfuellt sind: Markt-Ampel + Stage-2-Trend
+    (Grundvoraussetzung, sonst direkt rot) UND enge Basis/VCP (= geringe
+    Volatilitaet VOR dem Einstieg, nicht waehrend der Haltedauer) UND
+    Pivot-Trigger (Livermore-Pivotpunkt) UND kein Extended/Earnings/50-80/
+    Klimax-Risiko. Strenger als der Signal-Hub-"Top-Setups"-Filter, weil ein
+    gehebelter Trade eine engere Stop-Distanz und weniger Fehlertoleranz hat.
+    """
+    markt_ok = (regime.get(markt) or {}).get("ampel") == "gruen"
+    trend_ok = kontext.get("stage2_ampel") == "gruen"
+    if not (markt_ok and trend_ok):
+        return {"stufe": "rot", "gruende": ["Markt-Ampel oder Stage-2-Trend-Template nicht grün"]}
+    basis_ok = kontext.get("basis_ampel") == "gruen"
+    trigger_ok = pivot_status in ("ARMED", "BREAKOUT")
+    ext = kontext.get("extended_pct")
+    ext_ok = not (ext is not None and ext >= 25)
+    earn = kontext.get("earnings") or {}
+    earn_ok = not (earn.get("status") == "termin" and earn.get("tage") is not None
+                   and 0 <= earn["tage"] <= warn_tage)
+    gap_ok = not kontext.get("minervini_5080")
+    klimax_ok = not kontext.get("klimax_warnung")
+    gruende = []
+    if not basis_ok: gruende.append("Basis/VCP noch nicht eng genug (Volatilität zu hoch)")
+    if not trigger_ok: gruende.append("kein Pivot-Trigger (ARMED/BREAKOUT)")
+    if not ext_ok: gruende.append("Extended >25% über SMA50")
+    if not earn_ok: gruende.append("Earnings-Fenster")
+    if not gap_ok: gruende.append("50/80-Gap-Risiko")
+    if not klimax_ok: gruende.append("Klimax-Risiko")
+    return {"stufe": "gelb" if gruende else "gruen", "gruende": gruende}
 
 
 def _bull_kontext(stadium):
@@ -114,10 +192,12 @@ def _chartdaten(ohlc, fenster=CHART_FENSTER):
 
 
 def score_alle():
-    ticker, basis_erstellt = lade_tickerliste()
+    ticker, basis_erstellt, marktregime = lade_tickerliste()
     if not ticker:
         return False
 
+    pivotmap = lade_pivotmap()
+    warn_tage = lade_warn_tage()
     cache = kursdaten.lade_cache()
     heute = date.today().isoformat()
     kursdaten.prefetch_charts_parallel([t["yahoo_symbol"] for t in ticker], cache, heute)
@@ -131,12 +211,15 @@ def score_alle():
         m = muster.analysiere(ohlc)
         if m.get("status") != "ok":
             continue
+        kontext = t["_hebel_kontext"]
         treffer.append({
-            **{k: v for k, v in t.items()},
+            **{k: v for k, v in t.items() if k != "_hebel_kontext"},
             "preis": round(ohlc["closes"][-1], 2),
             "pa_score": pa_score(m),
             "muster": m,
             "chart": _chartdaten(ohlc),
+            "hebel_ampel": hebel_ampel(kontext, t["markt"], marktregime,
+                                       pivotmap.get(t["ticker"]), warn_tage),
         })
         if i % 25 == 0:
             print(f"  {i}/{len(ticker)} verarbeitet ...")

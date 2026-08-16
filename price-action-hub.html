@@ -94,6 +94,11 @@
   .badge-neutral{background:rgba(155,89,182,.18);color:#c9a0dc;border-color:rgba(155,89,182,.4)}
   .badge-strong{font-weight:700}
   .badge-failed{background:rgba(231,76,60,.28);color:#ffb4ab;border-color:rgba(231,76,60,.6);font-weight:700}
+  /* Hebel-Ampel (2026-08-16): identische Kriterien/Farben wie Signal-Hub -
+     rot wird bewusst NICHT gerendert (waere auf fast jeder Karte sichtbar). */
+  .hebelb{font-size:11px;padding:3px 9px;border-radius:8px;font-weight:700;display:inline-block}
+  .hebelb-gruen{background:rgba(47,176,141,.22);color:var(--ok);border:1px solid rgba(47,176,141,.5)}
+  .hebelb-gelb{background:rgba(243,156,18,.18);color:var(--warn);border:1px solid rgba(243,156,18,.45)}
 
   .stadium{font-size:11px;padding:3px 9px;border-radius:8px;font-weight:600;display:inline-block}
   .st-Advancing{background:rgba(47,176,141,.18);color:var(--ok)}
@@ -180,6 +185,12 @@
     <input type="search" id="suche" placeholder="🔎 Ticker / Name / Börse (mehrere möglich)">
     <button class="btn ghost" id="resetbtn" title="Alle Filter auf Standard zurücksetzen: bullisch, stärkste Werte (Min. |Score| 2)">↺ Zurücksetzen</button>
     <div class="fgroup">
+     <div class="fgroup-label">Hebel-Trade (Knock-Outs/Optionsscheine, z.B. Finanzen.net Zero)</div>
+     <div class="fgroup-row">
+      <label class="slabel" title="Markt-Ampel grün UND Stage-2-Trend grün UND Basis/VCP eng (geringe Volatilität) UND Pivot-Trigger (ARMED/BREAKOUT aus dem Signal-Hub) UND nicht extended UND keine akute Earnings-Sperre UND kein 50/80-/Klimax-Risiko. Speziell auf die engere Stop-Distanz und geringere Fehlertoleranz eines gehebelten Einstiegs zugeschnitten (strenger als reine Chartmuster)."><input type="checkbox" id="hebelonly"> ⚡ nur Hebel-Kandidaten (grün) <span id="hebelcount" class="filtercount"></span></label>
+     </div>
+    </div>
+    <div class="fgroup">
      <div class="fgroup-label">Muster – muss vorhanden sein</div>
      <div class="chips" id="musterchips">
       <span class="chip" data-k="trend">💪 Starke Trendbar</span>
@@ -218,6 +229,8 @@
     <span>Abstand 6M-Hoch: % Abstand des aktuellen Kurses vom höchsten Hoch der letzten ~6 Monate</span>
     <span>Kerzen: <i style="background:#2FB08D"></i>bullisch <i style="background:#E74C3C"></i>bärisch</span>
     <span>Standardansicht: 📈 bullisch, Min. |Score| 2 (stärkste Werte) — ↺ Zurücksetzen stellt das wieder her</span>
+    <span><span class="hebelb hebelb-gruen">🟢 Hebel bereit</span> alle Hebel-Kriterien erfüllt (Markt-Ampel, Trend-Template, Basis/VCP, Pivot-Trigger, kein Extended/Earnings/50-80/Klimax-Risiko — aus dem Signal-Hub übernommen)</span>
+    <span><span class="hebelb hebelb-gelb">🟡 Hebel im Fokus</span> Markt/Trend intakt, aber noch nicht alle Kriterien erfüllt (Details im Badge-Tooltip) · kein Badge = für Hebel ungeeignet</span>
    </div>
   </details>
   <div class="grid" id="grid"></div>
@@ -248,7 +261,7 @@ let CURRENT_LIST=[], RENDER_LIMIT=PAGE_SIZE;
 // Standard-Ansicht: bullisch + stärkste Werte (Min. |Score| 2 -> ca. die
 // staerksten ~100 von ~1300 Tickern), damit das Dashboard nicht ungefiltert
 // mit 1300 neutralen Treffern startet. ↺ Zurücksetzen stellt genau das wieder her.
-const DEFAULT_STATE={markt:"alle",richtung:"bull",minscore:2,sort:"score",suche:"",muster:new Set(),qualitaet:new Map(),stadium:"alle",minliq:0,abstandhoch:100,minkonfluenz:0};
+const DEFAULT_STATE={markt:"alle",richtung:"bull",minscore:2,sort:"score",suche:"",muster:new Set(),qualitaet:new Map(),stadium:"alle",minliq:0,abstandhoch:100,minkonfluenz:0,hebelOnly:false};
 let state={...DEFAULT_STATE,muster:new Set(),qualitaet:new Map()};
 
 const MUSTER_CHECK={
@@ -440,6 +453,18 @@ function badgeStadium(m){
   const st=m.marktstadium&&m.marktstadium.stadium; if(!st) return '';
   return `<span class="stadium st-${st}" title="MA200 ${m.marktstadium.ma200}, Slope ${m.marktstadium.slope}">${st}</span>`;
 }
+// Hebel-Ampel (2026-08-16): serverseitig in scorer.py::hebel_ampel() aus
+// Signal-Hub-Feldern (Markt-Ampel, Stage-2-Trend, Basis/VCP, Pivot-Status,
+// Extended/Earnings/50-80/Klimax) berechnet - identische Kriterien wie
+// Signal-Hub/signal-hub.html::hebelAmpel(). Rot bewusst kein Badge (siehe
+// CSS-Kommentar). "Erster Hinweis" -> steht VOR dem Marktstadium-Badge.
+function badgeHebel(t){
+  const h=t.hebel_ampel; if(!h||h.stufe==='rot') return '';
+  const icon=h.stufe==='gruen'?'🟢':'🟡';
+  const text=h.stufe==='gruen'?'bereit':'im Fokus';
+  const tip=`Hebel-Trade-Reife: ${h.gruende&&h.gruende.length?'noch offen – '+h.gruende.join(', '):'alle Kriterien erfüllt'}.`;
+  return `<span class="hebelb hebelb-${h.stufe}" title="${tip}">${icon} Hebel ${text}</span>`;
+}
 
 // Sofort-Ueberblick: dieselbe Punkte-Optik wie Signal-Hub/setup-detail.html,
 // aber auf Price-Action-Hubs eigene Muster gemuenzt - anders als die Score-
@@ -502,7 +527,7 @@ function karte(t,rang){
     <div class="qscan">${paQuickscan(m)}</div>
     ${candlechart(t.chart)}
     <div style="display:flex;justify-content:space-between;align-items:center">
-      ${badgeStadium(m)}
+      ${badgeHebel(t)}${badgeStadium(m)}
     </div>
     <div class="badges">
       ${badgeTrend(m)}${badgeInside(m)}${badgeBarCounting(m)}${badgeBreakout(m)}${badgeGap(m)}
@@ -523,8 +548,10 @@ function updateFilterCount(n){
   if(state.markt!=="alle")c++; if(state.richtung!=="alle")c++; if(state.minscore>0)c++; if(state.suche)c++;
   if(state.muster.size)c++; if(state.stadium!=="alle")c++;
   if(state.minliq>0)c++; if(state.abstandhoch<100)c++; if(state.minkonfluenz>0)c++;
-  if(state.qualitaet.size)c++;
+  if(state.qualitaet.size)c++; if(state.hebelOnly)c++;
   el.textContent=`· ${n} Treffer${c?` · ${c} Filter aktiv`:''}`;
+  const hc=document.getElementById('hebelcount');
+  if(hc){const nH=(DATA.treffer||[]).filter(t=>t.hebel_ampel&&t.hebel_ampel.stufe==='gruen').length;hc.textContent=nH?`· ${nH}`:'';}
 }
 
 function render(){
@@ -538,6 +565,7 @@ function render(){
   if(state.minliq>0) list=list.filter(t=>t._liq!=null&&t._liq>=state.minliq);
   if(state.abstandhoch<100) list=list.filter(t=>t._abstandHoch!=null&&t._abstandHoch<=state.abstandhoch);
   if(state.minkonfluenz>0) list=list.filter(t=>(t._konfluenz||0)>=state.minkonfluenz);
+  if(state.hebelOnly) list=list.filter(t=>t.hebel_ampel&&t.hebel_ampel.stufe==='gruen');
   if(state.qualitaet.size){
     for(const [k,v] of state.qualitaet){
       if(v==="plus") list=list.filter(t=>t._qual&&t._qual[k]===true);
@@ -611,6 +639,7 @@ document.getElementById('musterchips').addEventListener('click',e=>{
   else{ state.muster.add(k); c.classList.add('on'); }
   render();
 });
+document.getElementById('hebelonly').addEventListener('change',e=>{state.hebelOnly=e.target.checked;render();});
 document.getElementById('qualchips').addEventListener('click',e=>{
   const c=e.target.closest('.chip'); if(!c) return;
   const k=c.dataset.k;
@@ -634,6 +663,7 @@ document.getElementById('resetbtn').addEventListener('click',()=>{
   document.getElementById('abstandhoch').value=state.abstandhoch;
   document.getElementById('sortby').value=state.sort;
   document.getElementById('suche').value='';
+  document.getElementById('hebelonly').checked=false;
   document.querySelectorAll('#musterchips .chip').forEach(c=>c.classList.remove('on'));
   document.querySelectorAll('#qualchips .chip').forEach(c=>c.classList.remove('state-plus','state-minus'));
   render();

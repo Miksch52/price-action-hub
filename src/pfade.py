@@ -16,7 +16,18 @@ Der Price-Action-Hub liest die Ticker-Universe des Signal-Hub NUR ueber
 dessen Ausgabedatei (SIGNAL_HUB_SIGNALS_JSON) -- niemals per Python-Import
 aus Signal-Hub/src. Das ist Absicht (Entflechtungsprinzip, CLAUDE.md: "Apps
 nicht mergen"): beide Tools bleiben unabhaengig lauffaehig, nur der
-Datenaustausch (Tickerliste, keine Scores) ist erlaubt.
+Datenaustausch ueber fertige Ausgabedateien ist erlaubt (kein Cross-App-
+Python-Import, gleiches Prinzip wie top_setups.py).
+
+Seit der Hebel-Ampel (2026-08-16, scorer.py::hebel_ampel) bewusst erweiterte
+Ausnahme: zusaetzlich zur reinen Tickerliste werden aus SIGNAL_HUB_SIGNALS_JSON
+gezielt ein paar bereits FERTIG berechnete Ampel-/Risikofelder je Ticker
+uebernommen (Stage-2-Trend, Basis/VCP, Extended, Earnings, 50/80, Klimax) plus
+SIGNAL_HUB_PIVOT_JSON fuer den Pivot-Status - reines Durchreichen, KEINE
+Neuberechnung/kein Ersatz des Signal-Hub-Scores (der bleibt "pa_score", siehe
+scorer.py-Docstring). Ohne dieses gezielte Feld-Durchreichen muesste die
+Trend-Template-/Markt-Ampel-Logik ein zweites Mal in diesem Repo entstehen -
+genau das soll die Entflechtung verhindern (Inhalte leben an einem Ort).
 """
 
 import os
@@ -36,6 +47,11 @@ PRICEACTION_JS = os.path.join(DATA, "priceaction.js")
 # wenn der Signal-Hub-Schritt in genau diesem Workflow-Lauf tatsaechlich
 # geschrieben hat (Signal-Hub/data/ ist komplett .gitignore't).
 SIGNAL_HUB_SIGNALS_JSON = os.path.join(REPO_ROOT, "Signal-Hub", "data", "signals.json")
+
+# Fuer die Hebel-Ampel: Pivot-Status (ARMED/BREAKOUT, Livermore-Pivotpunkt) je
+# Ticker - gleiche Datei, die top_setups.py schon liest. Existiert nur, wenn
+# der Signal-Hub-Pivot-Screener in diesem Lauf tatsaechlich geschrieben hat.
+SIGNAL_HUB_PIVOT_JSON = os.path.join(REPO_ROOT, "Signal-Hub", "data", "pivot.json")
 
 # Gleiches Prinzip fuer den ntfy-Kanal des Top-Setups-Push (top_setups.py):
 # reiner Datei-Read von Signal-Hub/config.json, kein Cross-App-Python-Import
