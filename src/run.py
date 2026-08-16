@@ -15,6 +15,7 @@ import sys
 
 import scorer
 import top_setups
+import hebel_backtest
 
 
 def main():
@@ -26,6 +27,14 @@ def main():
         top_setups.schreibe()
     except Exception as ex:
         print(f"Top-Setups-Aggregat uebersprungen ({ex}).")
+    # Forward-Test der Hebel-Ampel (seit 2026-08-16): heutige gruen/gelb-
+    # Ticker ins Logbuch + gereifte Picks auswerten. Scheitert nie hart (nur
+    # kein Backtest-Panel), analog top_setups.
+    if ok:
+        try:
+            hebel_backtest.log_und_evaluate()
+        except Exception as ex:
+            print(f"Hebel-Backtest uebersprungen ({ex}).")
     sys.exit(0 if ok else 1)
 
 

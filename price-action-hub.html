@@ -32,6 +32,13 @@
   .filterbox[open] .filtersum{border-bottom:1px solid var(--line)}
   .filterbox .controls{margin:0;padding:12px}
   .filtercount{color:var(--primary);font-weight:700;font-size:12px}
+  /* Hebel-Backtest-Panel (2026-08-16), Tabellen-Stil 1:1 aus Signal-Hub/
+     signal-hub.html::.hittab uebernommen (gleiches Trefferquoten-Muster). */
+  .hittab{border-collapse:collapse;width:auto}
+  .hittab th,.hittab td{padding:4px 12px;text-align:right;border-bottom:1px solid rgba(255,255,255,.08);white-space:nowrap}
+  .hittab th{color:var(--muted);font-weight:600}
+  .hittab td:first-child,.hittab th:first-child{text-align:left}
+  .hittab .pos{color:#2ecc71}.hittab .neg{color:#e74c3c}
   /* Vorausschau-Zaehler auf den Filter-Chips (2026-08-16): "wie viele Treffer
      haette ich mit GENAU diesem Filter allein" - unabhaengig von anderen
      aktiven Filtern (gleiches Prinzip wie pivotcount/topsetcount/hebelcount
@@ -241,6 +248,10 @@
     <span><span class="hebelb hebelb-gelb">🟡 Hebel im Fokus</span> Markt/Trend intakt, aber noch nicht alle Kriterien erfüllt (Details im Badge-Tooltip) · kein Badge = für Hebel ungeeignet</span>
    </div>
   </details>
+  <details id="hebelbtbox" class="filterbox" style="display:none">
+   <summary class="filtersum">⚡ Trefferquoten Hebel-Ampel (Forward-Test) <span id="hebelbtstand" class="filtercount"></span></summary>
+   <div id="hebelbtlist" style="padding:12px;font-size:13px;color:var(--muted)"></div>
+  </details>
   <div class="grid" id="grid"></div>
   <div class="empty" id="empty" style="display:none">Keine Treffer für die aktuellen Filter.</div>
   <button class="btn" id="mehrladen" style="display:none;margin:14px auto" onclick="mehrLaden()">Mehr laden</button>
@@ -431,6 +442,46 @@ async function ladeDaten(){
   }catch(e){}
   await _ladeFallbackSkript('data/priceaction.js');
   DATA = window.PRICEACTION_DATA || {treffer:[],erstellt:null,anzahl:0};
+}
+
+let HEBELBT=null;
+async function ladeHebelBacktest(){
+  // Trefferquoten der Hebel-Ampel (hebel_backtest.py schreibt sie bei jedem
+  // Lauf). Optional wie priceaction.json selbst: fehlt die Datei (allererster
+  // Lauf, bevor das Logbuch existiert), bleibt das Panel einfach ausgeblendet
+  // (gleiches Muster wie Signal-Hub/signal-hub.html::ladeScoreBacktest()).
+  try{
+    const r=await fetch('data/hebel_backtest.json',{cache:'no-store'});
+    if(r.ok) HEBELBT=await r.json();
+  }catch(e){}
+  if(!HEBELBT){
+    await _ladeFallbackSkript('data/hebel_backtest.js');
+    HEBELBT = window.HEBEL_BACKTEST_DATA || null;
+  }
+  renderHebelBacktest();
+}
+function renderHebelBacktest(){
+  const box=document.getElementById('hebelbtbox'), el=document.getElementById('hebelbtlist'), cnt=document.getElementById('hebelbtstand');
+  if(!box||!el) return;
+  if(!HEBELBT||!HEBELBT.forward_realisiert){ box.style.display='none'; return; }
+  const pm=v=>v==null?'–':`<span class="${v>0?'pos':v<0?'neg':''}">${v>0?'+':''}${v}</span>`;
+  let html='<table class="hittab"><tr><th>Stufe</th><th>Horizont</th><th>n</th><th>Win %</th><th>Ø %</th><th>Median %</th></tr>';
+  let zeilen=0;
+  for(const stufe of ['gruen','gelb']){
+    for(const hor of ['4W','8W','12W']){
+      const s=(HEBELBT.forward_realisiert[stufe]||{})[hor];
+      if(!s||!s.n) continue;
+      zeilen++;
+      html+=`<tr><td>${stufe==='gruen'?'🟢 Hebel bereit':'🟡 Hebel im Fokus'}</td><td>${hor}</td><td>${s.n}</td>`
+        +`<td>${s.win==null?'–':s.win}</td><td>${pm(s.avg)}</td><td>${pm(s.median)}</td></tr>`;
+    }
+  }
+  html+='</table>';
+  html+=`<p style="margin:8px 0 0;max-width:900px">${HEBELBT.hinweis||''}</p>`;
+  if(!zeilen){ box.style.display='none'; return; }
+  el.innerHTML=html;
+  if(cnt) cnt.textContent=`${(HEBELBT.forward_einzelfaelle||[]).length} Episoden · Stand ${(HEBELBT.erstellt||'').slice(0,10)}`;
+  box.style.display='';
 }
 
 function flagge(m){return m==="USA"?"🇺🇸":m==="Europa"?"🇪🇺":"🏳️";}
@@ -784,6 +835,7 @@ document.getElementById('resetbtn').addEventListener('click',()=>{
   vorberechnen();
   updateChipCounts();
   render();
+  ladeHebelBacktest();   // optional, blockiert den ersten Render nicht
 })();
 </script>
 </body>

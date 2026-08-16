@@ -41,6 +41,8 @@ os.makedirs(DATA, exist_ok=True)
 
 PRICEACTION_JSON = os.path.join(DATA, "priceaction.json")
 PRICEACTION_JS = os.path.join(DATA, "priceaction.js")
+HEBEL_BACKTEST = os.path.join(DATA, "hebel_backtest.json")  # Forward-Test der Hebel-Ampel
+HEBEL_BACKTEST_JS = os.path.join(DATA, "hebel_backtest.js")  # file://-Fallback
 
 # Reiner Datenpfad auf die Signal-Hub-Ausgabe (nur Ticker/Name/Markt gefragt,
 # keine Scores). Existiert in einem frischen GitHub-Actions-Checkout nur,
@@ -67,3 +69,11 @@ YAHOO_CACHE = os.path.join(LOKAL, "yahoo_cache.json")
 # Lauf schon in der Schnittmenge) - im Cloud-Job per R2 gesichert, sonst wie
 # yahoo_cache.json bei jedem frischen Checkout leer.
 TOP_SETUPS_STATE = os.path.join(LOKAL, "top_setups_state.json")
+# Forward-Log der Hebel-Ampel (welche Ticker waren wann "gruen"/"gelb", zu
+# welchem Kurs) - Basis fuer hebel_backtest.py. Wie top_setups_state.json per
+# R2 gesichert (Cloud-Job-Runner sind pro Lauf frisch, siehe pipeline.yml im
+# Signal-Hub-Repo) - anders als bei Signal-Hub gibt es hier KEINEN lokalen
+# Mac-mini-Dauerlauf (Price-Action-Hub hat keinen eigenen LaunchAgent), die
+# R2-Sicherung ist hier also von Anfang an die EINZIGE Persistenz, kein
+# nachtraeglicher Fix noetig.
+HEBEL_LOGBUCH = os.path.join(LOKAL, "hebel_logbuch.json")
