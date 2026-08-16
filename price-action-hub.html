@@ -143,6 +143,7 @@
     <a class="btn ghost" href="../Signal-Hub/signal-hub.html" style="text-decoration:none;display:inline-flex;align-items:center">📈 Signal-Hub</a>
     <a class="btn ghost" href="https://claude.ai/code/artifact/c77fbbf6-7d1e-4c99-87e5-1714328279e3" target="_blank" title="Betriebsanleitung: Symbol-Legende, Filter-Referenz, Datenherkunft" style="text-decoration:none;display:inline-flex;align-items:center">📖 Anleitung</a>
     <button class="btn ghost" id="cloudbtn" onclick="triggerCloudWorkflow('Miksch52','signal-hub','pipeline.yml',this,'Signal-Hub + Price-Action-Hub-Update')">☁️ Cloud-Scan starten</button>
+    <button class="btn ghost" id="watchlistBtn" onclick="erstelleWatchlist()" title="Aktuell gefilterte Titel (Markt/Muster/Qualität/Suche) als TradingView-importierbare .txt in Watchlisten/Price-Action-Hub/ im MTS-Hauptordner speichern — nur mit lokalem Server (Mac mini)">🗒️ Watchlist erstellen</button>
   </div>
   <details id="filterbox" class="filterbox" open>
    <summary class="filtersum">🔧 Filter &amp; Sortierung <span id="filtercount" class="filtercount"></span></summary>
@@ -435,6 +436,74 @@ async function ladeDaten(){
 function flagge(m){return m==="USA"?"🇺🇸":m==="Europa"?"🇪🇺":"🏳️";}
 function scoreColor(s){return s>=2?"var(--ok)":s<=-2?"var(--bad)":"var(--muted)";}
 function einstufFor(s){return s>=2?{txt:"Bullisch",cls:"e-bull"}:s<=-2?{txt:"Bärisch",cls:"e-bear"}:{txt:"Neutral",cls:"e-neutral"};}
+
+// "🗒️ Watchlist erstellen": Yahoo haengt bei Nicht-US-Boersen ein Laender-/
+// Boersen-Kuerzel an (SY1.DE, MC.PA, RIO.L...), das TradingView nicht kennt -
+// dieselbe einzeln verifizierte Zuordnung wie in Signal-Hub/setup-detail.html
+// (dort zuerst gebaut, siehe dortiger Kommentar). Unbekannte/neue Suffixe: nur
+// abschneiden, TradingViews Autosuche uebernimmt (Best-Effort statt gar kein Symbol).
+const YAHOO_SUFFIX_TV_EXCHANGE={DE:'XETR',F:'XETR',MU:'XETR',PA:'EURONEXT',AS:'EURONEXT',
+  L:'LSE',SW:'SIX',MI:'MIL',ST:'OMXSTO',OL:'OSL',CO:'OMXCOP'};
+function tvSymbol(ticker){
+  const m=ticker.match(/^(.+)\.([A-Za-z]{1,4})$/);
+  if(!m) return ticker;
+  const [,basis,suf]=m;
+  const exch=YAHOO_SUFFIX_TV_EXCHANGE[suf.toUpperCase()];
+  return exch?`${exch}:${basis}`:basis;
+}
+const MUSTER_LABELS={trend:"💪 Starke Trendbar",inside:"📥 Inside Bar",barcounting:"📐 Bar-Counting",breakout:"🚀 Breakout",gap:"↕️ Gap"};
+const QUAL_LABELS={volbest:"Volumen-bestätigter Breakout",failed:"Failed Breakout",trendkonform:"Trendkonform"};
+// Zusammenfassung der aktuell aktiven Filter fuer die lesbare Watchlist-Datei.
+function filterZusammenfassungPAH(){
+  const teile=[];
+  if(state.markt!=="alle") teile.push(state.markt);
+  if(state.richtung!=="alle") teile.push(state.richtung==="bull"?"📈 nur bullisch":"📉 nur bärisch");
+  if(state.minscore>0) teile.push(`Min. |Score| ${state.minscore}`);
+  if(state.minkonfluenz>0) teile.push(`Min. Konfluenz ${state.minkonfluenz}`);
+  if(state.stadium!=="alle") teile.push(`Marktstadium ${state.stadium}`);
+  if(state.minliq>0) teile.push(`Ø Volumen ≥ ${state.minliq}`);
+  if(state.abstandhoch<100) teile.push(`Abstand 6M-Hoch ≤ ${state.abstandhoch}%`);
+  if(state.hebelOnly) teile.push("⚡ nur Hebel-Kandidaten (grün)");
+  if(state.muster.size) teile.push([...state.muster].map(k=>MUSTER_LABELS[k]||k).join(", "));
+  for(const [k,v] of state.qualitaet) teile.push((v==="plus"?"✓ ":"✗ ")+(QUAL_LABELS[k]||k));
+  if(state.suche) teile.push(`Suche „${state.suche}"`);
+  teile.push("Sortierung: "+(document.getElementById('sortby').selectedOptions[0]?.textContent.replace('Sortierung: ','')||state.sort));
+  return teile.join(', ');
+}
+// Schickt CURRENT_LIST (die aktuell gefilterte/sortierte Ansicht, siehe render())
+// an /Price-Action-Hub/api/watchlist (server_mts.py, 8090 - Price-Action-Hub hat
+// keinen eigenen Server/Port). Referenz: Lokaler-Trend-Screener/dashboard.html::
+// erstelleWatchlist() (dort zuerst gebaut) bzw. server_mts.py::_api_watchlist.
+async function erstelleWatchlist(){
+  const rows=CURRENT_LIST;
+  if(!rows.length){ alert("Keine Titel in der aktuellen Filteransicht — erst Filter lockern."); return; }
+  const lesbar=rows.map(t=>
+    `${t.ticker.padEnd(9)} ${flagge(t.markt)} PA-Score ${String(t.pa_score).padStart(3)}`
+    + (t.name?`  · ${t.name}`:'')
+  ).join('\n');
+  const btn=document.getElementById('watchlistBtn');
+  const orig=btn.textContent;
+  btn.textContent="⏳ speichert …";
+  try{
+    const r=await fetch('api/watchlist',{method:'POST',cache:'no-store',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        titel: state.markt!=="alle"?state.markt:"Alle",
+        symbole: rows.map(t=>tvSymbol(t.ticker)),
+        symbole_tf: rows.map(t=>t.ticker),
+        zusammenfassung: filterZusammenfassungPAH(),
+        lesbar,
+      }),
+    });
+    const d=await r.json();
+    if(d.ok) alert(`Watchlist gespeichert: ${d.datei} + ${d.datei_lesbar} + ${d.datei_tf} (${d.anzahl} Titel) in Watchlisten/Price-Action-Hub/ im MTS-Hauptordner.`);
+    else alert("Fehler beim Speichern: "+(d.msg||d.fehler||"unbekannt"));
+  }catch(e){
+    alert("Nur mit lokalem Server möglich (Mac mini, LAN/Tailscale) — kein Server erreichbar oder Netzwerkfehler: "+e.message);
+  }finally{
+    btn.textContent=orig;
+  }
+}
 
 function candlechart(ch){
   if(!ch||!ch.c||ch.c.length<3) return '';
