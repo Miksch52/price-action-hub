@@ -499,7 +499,8 @@ async function erstelleWatchlist(){
     if(d.ok) alert(`Watchlist gespeichert: ${d.datei} + ${d.datei_lesbar} + ${d.datei_tf} (${d.anzahl} Titel) in Watchlisten/Price-Action-Hub/ im MTS-Hauptordner.`);
     else alert("Fehler beim Speichern: "+(d.msg||d.fehler||"unbekannt"));
   }catch(e){
-    alert("Nur mit lokalem Server möglich (Mac mini, LAN/Tailscale) — kein Server erreichbar oder Netzwerkfehler: "+e.message);
+    console.error('Watchlist-Export fehlgeschlagen:', e);
+    alert("Nur mit lokalem Server möglich (Mac mini, LAN/Tailscale) — über die reine Cloud-/Pages-Adresse kann nicht gespeichert werden.");
   }finally{
     btn.textContent=orig;
   }
