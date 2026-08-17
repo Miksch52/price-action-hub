@@ -60,7 +60,10 @@ PIVOT = os.path.join(_SH_DATA, "pivot.json")
 OUT_JSON = os.path.join(_SH_DATA, "top_setups.json")
 OUT_JS = os.path.join(_SH_DATA, "top_setups.js")
 
-MAX_SETUPS = 24     # winzig halten - das Panel zeigt ohnehin nur die Spitze
+MAX_SETUPS = 40     # Deckel oberhalb des Frontend-Limits (seit 2026-08-17: 20
+                     # direkt sichtbar, siehe index.html::renderTopSetups()::LIMIT) -
+                     # laesst der "N weitere anzeigen"-Aufklappliste noch Raum,
+                     # statt sie an Tagen mit vielen Treffern leerlaufen zu lassen.
 
 AMPEL_ICON = {"gruen": "🟢", "gelb": "🟡", "rot": "🔴"}
 FLAGGE = {"USA": "US", "Europa": "EU"}
