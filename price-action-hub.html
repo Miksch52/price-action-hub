@@ -448,6 +448,55 @@ async function ladeDaten(){
   DATA = window.PRICEACTION_DATA || {treffer:[],erstellt:null,anzahl:0};
 }
 
+// Win-Rate-Balkendiagramm fuer Backtest-Panels (2026-08-17, dataviz-Skill:
+// ordinale Ramp, EIN Hue/Ampel-Farbe, monoton hell->dunkel je Horizont,
+// Lichtende clear >=2:1 Kontrast - validiert per validate_palette.js
+// --ordinal). Bewusst horizontale Balken (variable Kohorten-Textlaenge,
+// mobilfreundlich, kein Scrollen noetig). Zahlen bleiben zusaetzlich in der
+// Tabelle darunter - der Chart ist nur der schnelle Ueberblick.
+const BT_RAMP=['#614C27','#9C6A1B','#D68910'];   // 4W/8W/12W, aus --primary/--primary2 abgeleitet
+const BT_HORIZONTE=['4W','8W','12W'];
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]||c)); }
+function btChartHtml(rows, forwardData){
+  // rows: [{key,label}]. forwardData: {key:{'4W':{n,win,avg,median},...}}
+  // Zeilenhoehe richtet sich nach der TATSAECHLICH vorhandenen Anzahl Balken
+  // je Kohorte (meist nur 4W in den ersten Wochen) - sonst blieben leere
+  // Balken-Slots als unnoetige Luecken stehen (fixe 3-Slot-Hoehe probiert,
+  // sah bei ueberwiegend einzeiligen Kohorten wie ein Rendering-Fehler aus).
+  const sichtbar=rows
+    .map(r=>({...r, vorhanden: BT_HORIZONTE.filter(h=>(forwardData[r.key]||{})[h]?.n)}))
+    .filter(r=>r.vorhanden.length);
+  if(!sichtbar.length) return '';
+  const barH=13, gap=2, labelH=16, rowGap=10, leftPad=4, rightPad=4, topPad=22;
+  const chartW=560, plotW=chartW-leftPad-rightPad;
+  let y=topPad;
+  const rowYs=sichtbar.map(r=>{ const y0=y; y+=labelH+r.vorhanden.length*(barH+gap)+rowGap; return y0; });
+  const H=y+2;
+  let svg=`<svg viewBox="0 0 ${chartW} ${H}" width="100%" style="display:block;overflow:visible">`;
+  [0,25,50,75,100].forEach(pct=>{
+    const x=leftPad+plotW*pct/100;
+    svg+=`<line x1="${x}" y1="${topPad-4}" x2="${x}" y2="${H-2}" stroke="var(--line)" stroke-width="1"/>`;
+    svg+=`<text x="${x}" y="${topPad-8}" font-size="9" fill="var(--muted)" text-anchor="middle">${pct}%</text>`;
+  });
+  sichtbar.forEach((r,i)=>{
+    const rowY=rowYs[i];
+    svg+=`<text x="${leftPad}" y="${rowY+9}" font-size="10.5" fill="var(--txt)">${esc(r.label)}</text>`;
+    r.vorhanden.forEach((h,j)=>{
+      const s=(forwardData[r.key]||{})[h];
+      const jRamp=BT_HORIZONTE.indexOf(h);
+      const barY=rowY+labelH+j*(barH+gap);
+      const w=Math.max(3,plotW*Math.min(100,Math.max(0,s.win))/100);
+      const avgTxt=(s.avg>0?'+':'')+s.avg;
+      svg+=`<rect x="${leftPad}" y="${barY}" width="${w}" height="${barH}" rx="4" fill="${BT_RAMP[jRamp]}">`
+        +`<title>${esc(r.label)} · ${h}: n=${s.n}, Win ${s.win}%, Ø ${avgTxt}%</title></rect>`;
+    });
+  });
+  svg+='</svg>';
+  const legend=BT_HORIZONTE.map((h,j)=>`<span style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:11px;color:var(--muted)">`
+    +`<span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${BT_RAMP[j]}"></span>${h}</span>`).join('');
+  return `<div style="margin:2px 0 12px">${svg}</div><div style="margin-bottom:10px">${legend}</div>`;
+}
+
 let HEBELBT=null;
 async function ladeHebelBacktest(){
   // Trefferquoten der Hebel-Ampel (hebel_backtest.py schreibt sie bei jedem
@@ -469,7 +518,8 @@ function renderHebelBacktest(){
   if(!box||!el) return;
   if(!HEBELBT||!HEBELBT.forward_realisiert){ box.style.display='none'; return; }
   const pm=v=>v==null?'–':`<span class="${v>0?'pos':v<0?'neg':''}">${v>0?'+':''}${v}</span>`;
-  let html='<table class="hittab"><tr><th>Stufe</th><th>Horizont</th><th>n</th><th>Win %</th><th>Ø %</th><th>Median %</th></tr>';
+  let html=btChartHtml([{key:'gruen',label:'🟢 Hebel bereit'},{key:'gelb',label:'🟡 Hebel im Fokus'}], HEBELBT.forward_realisiert);
+  html+='<table class="hittab"><tr><th>Stufe</th><th>Horizont</th><th>n</th><th>Win %</th><th>Ø %</th><th>Median %</th></tr>';
   let zeilen=0;
   for(const stufe of ['gruen','gelb']){
     for(const hor of ['4W','8W','12W']){
@@ -510,7 +560,8 @@ function renderMusterBacktest(){
   if(!box||!el) return;
   if(!MUSTERBT||!MUSTERBT.forward_realisiert){ box.style.display='none'; return; }
   const pm=v=>v==null?'–':`<span class="${v>0?'pos':v<0?'neg':''}">${v>0?'+':''}${v}</span>`;
-  let html='<table class="hittab"><tr><th>Kohorte</th><th>Horizont</th><th>n</th><th>Win %</th><th>Ø %</th><th>Median %</th></tr>';
+  let html=btChartHtml(Object.keys(MUSTERBT_LABEL).map(k=>({key:k,label:MUSTERBT_LABEL[k]})), MUSTERBT.forward_realisiert);
+  html+='<table class="hittab"><tr><th>Kohorte</th><th>Horizont</th><th>n</th><th>Win %</th><th>Ø %</th><th>Median %</th></tr>';
   let zeilen=0;
   for(const kohorte of Object.keys(MUSTERBT_LABEL)){
     for(const hor of ['4W','8W','12W']){
