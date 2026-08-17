@@ -43,6 +43,8 @@ PRICEACTION_JSON = os.path.join(DATA, "priceaction.json")
 PRICEACTION_JS = os.path.join(DATA, "priceaction.js")
 HEBEL_BACKTEST = os.path.join(DATA, "hebel_backtest.json")  # Forward-Test der Hebel-Ampel
 HEBEL_BACKTEST_JS = os.path.join(DATA, "hebel_backtest.js")  # file://-Fallback
+MUSTER_BACKTEST = os.path.join(DATA, "muster_backtest.json")  # Forward-Test der Price-Action-Muster
+MUSTER_BACKTEST_JS = os.path.join(DATA, "muster_backtest.js")  # file://-Fallback
 
 # Reiner Datenpfad auf die Signal-Hub-Ausgabe (nur Ticker/Name/Markt gefragt,
 # keine Scores). Existiert in einem frischen GitHub-Actions-Checkout nur,
@@ -77,3 +79,8 @@ TOP_SETUPS_STATE = os.path.join(LOKAL, "top_setups_state.json")
 # R2-Sicherung ist hier also von Anfang an die EINZIGE Persistenz, kein
 # nachtraeglicher Fix noetig.
 HEBEL_LOGBUCH = os.path.join(LOKAL, "hebel_logbuch.json")
+# Forward-Log der Price-Action-Muster (Breakout/Trendbar/Score-Einstufung je
+# Ticker, zu welchem Kurs) - Basis fuer muster_backtest.py. Gleiches
+# Persistenz-Prinzip wie HEBEL_LOGBUCH (R2 von Anfang an, kein lokaler
+# Dauerlauf als Ausweichquelle).
+MUSTER_LOGBUCH = os.path.join(LOKAL, "muster_logbuch.json")

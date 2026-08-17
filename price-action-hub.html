@@ -252,6 +252,10 @@
    <summary class="filtersum">⚡ Trefferquoten Hebel-Ampel (Forward-Test) <span id="hebelbtstand" class="filtercount"></span></summary>
    <div id="hebelbtlist" style="padding:12px;font-size:13px;color:var(--muted)"></div>
   </details>
+  <details id="musterbtbox" class="filterbox" style="display:none">
+   <summary class="filtersum">📐 Trefferquoten Price-Action-Muster (Forward-Test) <span id="musterbtstand" class="filtercount"></span></summary>
+   <div id="musterbtlist" style="padding:12px;font-size:13px;color:var(--muted)"></div>
+  </details>
   <div class="grid" id="grid"></div>
   <div class="empty" id="empty" style="display:none">Keine Treffer für die aktuellen Filter.</div>
   <button class="btn" id="mehrladen" style="display:none;margin:14px auto" onclick="mehrLaden()">Mehr laden</button>
@@ -481,6 +485,47 @@ function renderHebelBacktest(){
   if(!zeilen){ box.style.display='none'; return; }
   el.innerHTML=html;
   if(cnt) cnt.textContent=`${(HEBELBT.forward_einzelfaelle||[]).length} Episoden · Stand ${(HEBELBT.erstellt||'').slice(0,10)}`;
+  box.style.display='';
+}
+
+const MUSTERBT_LABEL={breakout_up:'🚀 Breakout ↑',breakout_down:'🔻 Breakout ↓',
+  trendbar_stark_bull:'📈 Trendbar stark (bull)',trendbar_stark_bear:'📉 Trendbar stark (bear)',
+  score_bullisch:'Score bullisch (≥2)',score_baerisch:'Score bärisch (≤-2)'};
+let MUSTERBT=null;
+async function ladeMusterBacktest(){
+  // Trefferquoten der Price-Action-Muster (muster_backtest.py). Optional wie
+  // ladeHebelBacktest() - fehlt die Datei, bleibt das Panel ausgeblendet.
+  try{
+    const r=await fetch('data/muster_backtest.json',{cache:'no-store'});
+    if(r.ok) MUSTERBT=await r.json();
+  }catch(e){}
+  if(!MUSTERBT){
+    await _ladeFallbackSkript('data/muster_backtest.js');
+    MUSTERBT = window.MUSTER_BACKTEST_DATA || null;
+  }
+  renderMusterBacktest();
+}
+function renderMusterBacktest(){
+  const box=document.getElementById('musterbtbox'), el=document.getElementById('musterbtlist'), cnt=document.getElementById('musterbtstand');
+  if(!box||!el) return;
+  if(!MUSTERBT||!MUSTERBT.forward_realisiert){ box.style.display='none'; return; }
+  const pm=v=>v==null?'–':`<span class="${v>0?'pos':v<0?'neg':''}">${v>0?'+':''}${v}</span>`;
+  let html='<table class="hittab"><tr><th>Kohorte</th><th>Horizont</th><th>n</th><th>Win %</th><th>Ø %</th><th>Median %</th></tr>';
+  let zeilen=0;
+  for(const kohorte of Object.keys(MUSTERBT_LABEL)){
+    for(const hor of ['4W','8W','12W']){
+      const s=(MUSTERBT.forward_realisiert[kohorte]||{})[hor];
+      if(!s||!s.n) continue;
+      zeilen++;
+      html+=`<tr><td>${MUSTERBT_LABEL[kohorte]}</td><td>${hor}</td><td>${s.n}</td>`
+        +`<td>${s.win==null?'–':s.win}</td><td>${pm(s.avg)}</td><td>${pm(s.median)}</td></tr>`;
+    }
+  }
+  html+='</table>';
+  html+=`<p style="margin:8px 0 0;max-width:900px">${MUSTERBT.hinweis||''}</p>`;
+  if(!zeilen){ box.style.display='none'; return; }
+  el.innerHTML=html;
+  if(cnt) cnt.textContent=`${(MUSTERBT.forward_einzelfaelle||[]).length} Episoden · Stand ${(MUSTERBT.erstellt||'').slice(0,10)}`;
   box.style.display='';
 }
 
@@ -836,6 +881,7 @@ document.getElementById('resetbtn').addEventListener('click',()=>{
   updateChipCounts();
   render();
   ladeHebelBacktest();   // optional, blockiert den ersten Render nicht
+  ladeMusterBacktest();  // optional, blockiert den ersten Render nicht
 })();
 </script>
 </body>

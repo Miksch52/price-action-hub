@@ -16,6 +16,7 @@ import sys
 import scorer
 import top_setups
 import hebel_backtest
+import muster_backtest
 
 
 def main():
@@ -35,6 +36,12 @@ def main():
             hebel_backtest.log_und_evaluate()
         except Exception as ex:
             print(f"Hebel-Backtest uebersprungen ({ex}).")
+        # Forward-Test der Price-Action-Muster (seit 2026-08-16): analog zum
+        # Hebel-Backtest, eigenes Logbuch/eigene Ausgabedatei.
+        try:
+            muster_backtest.log_und_evaluate()
+        except Exception as ex:
+            print(f"Muster-Backtest uebersprungen ({ex}).")
     sys.exit(0 if ok else 1)
 
 
