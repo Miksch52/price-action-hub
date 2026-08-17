@@ -11,8 +11,15 @@ WINZIGE Zusammenfassung, die index.html laedt - statt der 11.8 MB signals.js
 
 Quellen (alle liegen vor, weil dieser Schritt als LETZTER der Pipeline laeuft,
 Price-Action-Hub/src/run.py nach dem PA-Scorer):
-  Signal-Hub/data/signals.json          - score, tier, markt, marktregime, earnings
+  Signal-Hub/data/signals.json          - score, tier, markt, marktregime, earnings,
+                                           quellen.unabhaengig (Konfluenz unabhaengiger
+                                           Scoring-Engines, siehe scorer.py::provider_group)
   Signal-Hub/data/pivot.json            - pivot_status (ARMED/BREAKOUT), qualitaet, pivot, stop
+  Signal-Hub/data/pivot_backtest.json   - forward_realisiert je Status/Horizont (Win-Rate,
+                                           n) aus dem unverzerrten Forward-Test, siehe
+                                           pivot_backtest.py::evaluate - liegt im selben
+                                           Artifact wie signals.json/pivot.json (signal-hub
+                                           laeuft VOR diesem Job), kein Cross-Job-Problem.
   Price-Action-Hub/data/priceaction.json - pa_score
 
 "Top-Setup" = die Schnittmenge, die man sonst ueber drei Dashboards manuell
@@ -24,6 +31,27 @@ Earnings-Sperre = mit Minervini-Hinweis), sonst waere das Panel an jedem
 nicht-gruenen Tag leer. Bewusst config-frei (kein warn_tage-Lesen): das
 Earnings-Fenster wendet das Frontend mit seiner eigenen warnTage()-Logik an,
 damit Startseite und Signal-Hub-Dashboard nie widersprechen.
+
+Konfluenz & Kern-Setups (seit 2026-08-17): zwei zusaetzliche, rein additive
+Signale, die NICHT filtern (jedes bisherige Top-Setup bleibt drin), sondern
+nur einordnen/priorisieren - Minervinis/O'Neils Grundprinzip "mehrere
+unabhaengige Bestaetigungen schlagen ein einzelnes Signal":
+  - quellen_unabhaengig: wie viele unabhaengige externe Engines (PDF/Finviz/
+    Markets-360/Trend-Screener) denselben Ticker unabhaengig voneinander in
+    den Signal-Hub-Trichter gespuelt haben (wiederverwendet scorer.py's
+    bestehende quellen.unabhaengig-Liste, dort schon Basis fuer den "🔗 N×
+    bestaetigt"-Badge im Signal-Hub-Dashboard).
+  - kern_setup: True, wenn der Forward-Backtest fuer GENAU DIESEN Pivot-Status
+    (ARMED/BREAKOUT) bei mindestens KERN_REIFE_N gereiften Picks eine Win-Rate
+    >= KERN_WIN_SCHWELLE zeigt - zieht die historisch am besten bestaetigte
+    Kohorte nach oben, statt sie in der Sortierung zufaellig zwischen
+    schwaecheren Kohorten verschwinden zu lassen. Rotation-Dashboard
+    (Gruppenfuehrerschaft) ist bewusst NICHT hier eingebaut: price-action-hub
+    und rotation-dashboard laufen als PARALLELE Jobs (siehe pipeline.yml,
+    "Diamant-Muster") - rotation.json existiert zum Zeitpunkt dieses Laufs
+    schlicht noch nicht auf demselben Runner. Der Leader-Abgleich passiert
+    stattdessen rein clientseitig in index.html (rotation.json ist winzig,
+    kein Grund fuer einen Umweg ueber Artifacts/Jobreihenfolge).
 
 Ausgabe: Signal-Hub/data/top_setups.json (+ .js fuer file:///Pages).
 
@@ -57,6 +85,7 @@ except ImportError:
 _SH_DATA = os.path.join(pfade.REPO_ROOT, "Signal-Hub", "data")
 SIGNALS = pfade.SIGNAL_HUB_SIGNALS_JSON
 PIVOT = os.path.join(_SH_DATA, "pivot.json")
+PIVOT_BACKTEST = os.path.join(_SH_DATA, "pivot_backtest.json")
 OUT_JSON = os.path.join(_SH_DATA, "top_setups.json")
 OUT_JS = os.path.join(_SH_DATA, "top_setups.js")
 
@@ -64,6 +93,18 @@ MAX_SETUPS = 40     # Deckel oberhalb des Frontend-Limits (seit 2026-08-17: 20
                      # direkt sichtbar, siehe index.html::renderTopSetups()::LIMIT) -
                      # laesst der "N weitere anzeigen"-Aufklappliste noch Raum,
                      # statt sie an Tagen mit vielen Treffern leerlaufen zu lassen.
+
+# Kern-Setup-Schwellen (seit 2026-08-17, siehe Modul-Docstring "Konfluenz &
+# Kern-Setups"). KERN_REIFE_N deckt sich mit der "reif genug"-Schwelle, die
+# der Backtest selbst schon fuer Push-Benachrichtigungen nutzt (siehe
+# pivot_backtest.py::SCHWELLE_PUSH) - unter dieser Stichprobengroesse gilt
+# eine Win-Rate als noch zu verrauscht, um Setups danach hochzuziehen.
+# KERN_WIN_SCHWELLE=60% liegt bewusst spuerbar unter dem bisher gemessenen
+# ARMED-Wert (71%, n=83, Stand 2026-08-17) - ein fixer Puffer, damit die
+# Schwelle nicht bei jeder kleinen Schwankung des Forward-Tests kippt.
+KERN_REIFE_N = 8
+KERN_WIN_SCHWELLE = 60.0
+BACKTEST_HORIZONTE = ("12W", "8W", "4W")  # laengster zuerst: reifer = aussagekraeftiger
 
 AMPEL_ICON = {"gruen": "🟢", "gelb": "🟡", "rot": "🔴"}
 FLAGGE = {"USA": "US", "Europa": "EU"}
@@ -153,10 +194,23 @@ def _push(neu):
     print(f"Top-Setups-Push {'gesendet' if ok else 'fehlgeschlagen (kein Thema oder ntfy-Fehler)'}: {titel}")
 
 
+def _backtest_info(pivot_backtest, status):
+    """Reifsten verfuegbaren Horizont fuer einen Pivot-Status liefern (oder
+    None, wenn noch keiner KERN_REIFE_N gereifte Picks hat) - siehe
+    Modul-Docstring "Konfluenz & Kern-Setups"."""
+    block = ((pivot_backtest or {}).get("forward_realisiert") or {}).get(status) or {}
+    for label in BACKTEST_HORIZONTE:
+        s = block.get(label)
+        if s and (s.get("n") or 0) >= KERN_REIFE_N and s.get("win") is not None:
+            return {"win": s["win"], "n": s["n"], "horizont": label}
+    return None
+
+
 def schreibe():
     signals = _lade(SIGNALS)
     pivot = _lade(PIVOT)
     pa = _lade(pfade.PRICEACTION_JSON)
+    pivot_backtest = _lade(PIVOT_BACKTEST)
     if not signals or not signals.get("treffer"):
         print("Top-Setups: keine signals.json - uebersprungen.")
         return False
@@ -178,6 +232,7 @@ def schreibe():
         if pa_score is None or pa_score <= 0:
             continue
         earn = e.get("earnings") or {}
+        bt = _backtest_info(pivot_backtest, p.get("pivot_status"))
         setups.append({
             "ticker": e.get("ticker"),
             "name": e.get("name"),
@@ -191,16 +246,21 @@ def schreibe():
             # naechster Earnings-Termin in Tagen (Frontend wendet warnTage() an)
             "earnings_tage": earn.get("tage") if earn.get("status") == "termin" else None,
             "regime": (regime.get(e.get("markt")) or {}).get("ampel"),
+            # Konfluenz & Kern-Setups (siehe Modul-Docstring):
+            "quellen_unabhaengig": len((e.get("quellen") or {}).get("unabhaengig") or []),
+            "backtest": bt,
+            "kern_setup": bool(bt and bt["win"] >= KERN_WIN_SCHWELLE),
         })
 
-    # Beste zuerst: ARMED vor BREAKOUT, dann Pivot-Qualitaet. Bis 2026-08-02 war
-    # BREAKOUT vorn - der frische, unverzerrte Forward-Test (Signal-Hub/src/
+    # Beste zuerst: Kern-Setup (Backtest-bestaetigte Kohorte, seit 2026-08-17)
+    # vor ARMED vor BREAKOUT, dann Pivot-Qualitaet. Bis 2026-08-02 war BREAKOUT
+    # vorn - der frische, unverzerrte Forward-Test (Signal-Hub/src/
     # pivot_backtest.py --evaluate) zeigt aber ARMED bei 71% Win-Rate (n=83)
     # gegen nur 34% bei BREAKOUT (n=90); der Retro-Backtest hatte BREAKOUT
     # wegen Universums-Bias faelschlich gut aussehen lassen (siehe Bias-Hinweis
     # in pivot_backtest.py). Bei genug neuen Forward-Daten erneut pruefen.
     rang = {"ARMED": 1, "BREAKOUT": 0}
-    setups.sort(key=lambda s: (rang.get(s["pivot_status"], 0), s["qualitaet"] or 0),
+    setups.sort(key=lambda s: (s["kern_setup"], rang.get(s["pivot_status"], 0), s["qualitaet"] or 0),
                 reverse=True)
     setups = setups[:MAX_SETUPS]
 
