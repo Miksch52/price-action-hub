@@ -109,6 +109,16 @@ BACKTEST_HORIZONTE = ("12W", "8W", "4W")  # laengster zuerst: reifer = aussagekr
 AMPEL_ICON = {"gruen": "🟢", "gelb": "🟡", "rot": "🔴"}
 FLAGGE = {"USA": "US", "Europa": "EU"}
 
+# Trend-Template-Kernfaktoren fuer die Kauf-Review-Queue (seit 2026-08-20,
+# Top-Setups-Roadmap Punkt 7): bewusst nur die Ampel (gruen/gelb/rot), nicht
+# der volle Detailtext - haelt top_setups.json winzig (siehe Moduldocstring
+# "statt der 11.8 MB signals.js"). Reihenfolge = Anzeigereihenfolge im
+# Frontend-Checklisten-Widget.
+TREND_TEMPLATE_FAKTOREN = [
+    "stage2_trend", "relative_staerke", "naehe_52w_hoch",
+    "basis_konsolidierung", "volumen_bestaetigung",
+]
+
 
 def _lade(pfad):
     try:
@@ -233,11 +243,18 @@ def schreibe():
             continue
         earn = e.get("earnings") or {}
         bt = _backtest_info(pivot_backtest, p.get("pivot_status"))
+        faktoren = e.get("faktoren") or {}
         setups.append({
             "ticker": e.get("ticker"),
             "name": e.get("name"),
             "markt": e.get("markt"),
+            "preis": e.get("preis"),
             "score": e.get("score"),
+            # Trend-Template-Ampeln fuer die Kauf-Review-Queue (Punkt 7):
+            # nur die Ampel je Kernfaktor, siehe TREND_TEMPLATE_FAKTOREN oben.
+            "trend_template": {
+                k: (faktoren.get(k) or {}).get("ampel") for k in TREND_TEMPLATE_FAKTOREN
+            },
             "pa_score": pa_score,
             "pivot_status": p.get("pivot_status"),
             "qualitaet": p.get("qualitaet"),
