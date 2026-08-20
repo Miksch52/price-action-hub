@@ -246,6 +246,11 @@ def schreibe():
             # naechster Earnings-Termin in Tagen (Frontend wendet warnTage() an)
             "earnings_tage": earn.get("tage") if earn.get("status") == "termin" else None,
             "regime": (regime.get(e.get("markt")) or {}).get("ampel"),
+            # Depot-Abgleich (seit 2026-08-20): scorer.py berechnet im_depot
+            # bereits gegen mts_data.json (Namensabgleich) - hier nur
+            # durchreichen, damit das Startseiten-Panel Doppelkaeufe zeigt,
+            # ohne erst auf setup-detail.html klicken zu muessen.
+            "im_depot": bool(e.get("im_depot")),
             # Konfluenz & Kern-Setups (siehe Modul-Docstring):
             "quellen_unabhaengig": len((e.get("quellen") or {}).get("unabhaengig") or []),
             "backtest": bt,
