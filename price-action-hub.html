@@ -152,7 +152,7 @@
     <button class="btn ghost" id="cloudbtn" onclick="triggerCloudWorkflow('Miksch52','signal-hub','pipeline.yml',this,'Signal-Hub + Price-Action-Hub-Update')">☁️ Cloud-Scan starten</button>
     <button class="btn ghost" id="watchlistBtn" onclick="erstelleWatchlist()" title="Aktuell gefilterte Titel (Markt/Muster/Qualität/Suche) als TradingView-importierbare .txt in Watchlisten/Price-Action-Hub/ im MTS-Hauptordner speichern — nur mit lokalem Server (Mac mini)">🗒️ Watchlist erstellen</button>
   </div>
-  <details id="filterbox" class="filterbox" open>
+  <details id="filterbox" class="filterbox">
    <summary class="filtersum">🔧 Filter &amp; Sortierung <span id="filtercount" class="filtercount"></span></summary>
    <div class="controls">
     <div class="seg" id="marktseg">
@@ -926,6 +926,28 @@ document.getElementById('resetbtn').addEventListener('click',()=>{
   render();
 });
 
+// Auto-Einklappen der Filterleiste beim Scrollen nach unten (seit 2026-08-17,
+// Muster 1:1 aus Signal-Hub/signal-hub.html übernommen, siehe dort für die
+// ausführliche Begründung): mehr Platz für die Ergebniskarten auf dem iPhone,
+// die sticky Filterleiste nahm sonst dauerhaft viel Bildschirmfläche weg.
+// Schließt alle offenen <details class="filterbox">-Panels (Filter &
+// Sortierung, Legende, Backtest-Panels), sobald über einen kleinen
+// Schwellenwert nach unten gescrollt wird. Bewusst KEIN automatisches
+// Wiederaufklappen beim Hochscrollen - der Nutzer klickt gezielt wieder auf.
+(function(){
+  let letzterScrollY=window.scrollY, letzteZeit=0;
+  window.addEventListener('scroll', () => {
+    const jetzt=Date.now();
+    if(jetzt-letzteZeit<100) return;
+    letzteZeit=jetzt;
+    const y=window.scrollY;
+    if(y>letzterScrollY && y>80){
+      document.querySelectorAll('details.filterbox[open]').forEach(d=>d.open=false);
+    }
+    letzterScrollY=y;
+  }, {passive:true});
+})();
+
 (async function init(){
   await ladeDaten();
   vorberechnen();
@@ -933,6 +955,9 @@ document.getElementById('resetbtn').addEventListener('click',()=>{
   render();
   ladeHebelBacktest();   // optional, blockiert den ersten Render nicht
   ladeMusterBacktest();  // optional, blockiert den ersten Render nicht
+  // Filterleiste: am Desktop offen, auf dem iPhone eingeklappt (entlastet den
+  // Schirm) - gleiches Muster wie Signal-Hub/signal-hub.html.
+  if(window.innerWidth>700){ const el=document.getElementById('filterbox'); if(el) el.open=true; }
 })();
 </script>
 </body>
