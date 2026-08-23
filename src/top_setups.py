@@ -41,11 +41,16 @@ unabhaengige Bestaetigungen schlagen ein einzelnes Signal":
     den Signal-Hub-Trichter gespuelt haben (wiederverwendet scorer.py's
     bestehende quellen.unabhaengig-Liste, dort schon Basis fuer den "🔗 N×
     bestaetigt"-Badge im Signal-Hub-Dashboard).
-  - kern_setup: True, wenn der Forward-Backtest fuer GENAU DIESEN Pivot-Status
-    (ARMED/BREAKOUT) bei mindestens KERN_REIFE_N gereiften Picks eine Win-Rate
-    >= KERN_WIN_SCHWELLE zeigt - zieht die historisch am besten bestaetigte
-    Kohorte nach oben, statt sie in der Sortierung zufaellig zwischen
-    schwaecheren Kohorten verschwinden zu lassen. Rotation-Dashboard
+  - kern_setup: True nur, wenn der Forward-Backtest fuer GENAU DIESEN
+    Pivot-Status (ARMED/BREAKOUT) einen STATISTISCH BELEGTEN Vorteil zeigt -
+    groesster Datentopf, mindestens KERN_REIFE_N gereifte Picks, Win-Rate
+    >= KERN_WIN_SCHWELLE und Untergrenze des 95%-Konfidenzintervalls ueber
+    KERN_CI_UNTERGRENZE (siehe Kommentar bei den Konstanten: die alte Fassung
+    vergab den Stern ab n=8 und hat damit Rauschen ausgezeichnet). Das Feld
+    "backtest" wird davon unabhaengig IMMER mitgeliefert, sobald ueberhaupt
+    Beobachtungen vorliegen - inklusive "reif"-Flag und Konfidenzintervall,
+    damit das Frontend die gemessene Zahl zeigen kann statt einer
+    Auszeichnung ohne Beleg. Rotation-Dashboard
     (Gruppenfuehrerschaft) ist bewusst NICHT hier eingebaut: price-action-hub
     und rotation-dashboard laufen als PARALLELE Jobs (siehe pipeline.yml,
     "Diamant-Muster") - rotation.json existiert zum Zeitpunkt dieses Laufs
@@ -69,6 +74,7 @@ notify.py) - konsequent zur bestehenden Entflechtung dieser Datei.
 """
 
 import json
+import math
 import os
 import ssl
 import urllib.request
@@ -94,17 +100,29 @@ MAX_SETUPS = 40     # Deckel oberhalb des Frontend-Limits (seit 2026-08-17: 20
                      # laesst der "N weitere anzeigen"-Aufklappliste noch Raum,
                      # statt sie an Tagen mit vielen Treffern leerlaufen zu lassen.
 
-# Kern-Setup-Schwellen (seit 2026-08-17, siehe Modul-Docstring "Konfluenz &
-# Kern-Setups"). KERN_REIFE_N deckt sich mit der "reif genug"-Schwelle, die
-# der Backtest selbst schon fuer Push-Benachrichtigungen nutzt (siehe
-# pivot_backtest.py::SCHWELLE_PUSH) - unter dieser Stichprobengroesse gilt
-# eine Win-Rate als noch zu verrauscht, um Setups danach hochzuziehen.
-# KERN_WIN_SCHWELLE=60% liegt bewusst spuerbar unter dem bisher gemessenen
-# ARMED-Wert (71%, n=83, Stand 2026-08-17) - ein fixer Puffer, damit die
-# Schwelle nicht bei jeder kleinen Schwankung des Forward-Tests kippt.
-KERN_REIFE_N = 8
+# Kern-Setup-Schwellen (seit 2026-08-17, verschaerft 2026-08-23 nach der
+# Systempruefung - siehe Modul-Docstring "Konfluenz & Kern-Setups").
+#
+# WARUM DIE ALTE FASSUNG FALSCH WAR (bis 2026-08-23): KERN_REIFE_N stand auf 8
+# und BACKTEST_HORIZONTE waehlte den LAENGSTEN Horizont zuerst ("reifer =
+# aussagekraeftiger"). Beides zusammen ergab systematisch den KLEINSTEN,
+# verrauschtesten Datentopf: fuer ARMED wurde am 2026-08-23 der 8W-Wert mit
+# n=12 genommen, waehrend derselbe Backtest bei 4W n=1005 auswies. Bei n=8
+# reicht das 95%-Konfidenzintervall einer beobachteten Win-Rate von 60% grob
+# von 26% bis 88% - der Stern behauptete Wissen, wo statistisch ein Muenzwurf
+# stand. Genau so kam auch die Rangfolge-Entscheidung "ARMED bei 71% (n=83)"
+# zustande; bei n=1005 lag derselbe Wert spaeter bei 48,8%.
+#
+# NEUE REGEL - drei Bedingungen, alle drei muessen halten:
+#   1. groesster verfuegbarer Datentopf (nicht laengster Horizont)
+#   2. mindestens KERN_REIFE_N gereifte Picks
+#   3. Win-Rate >= KERN_WIN_SCHWELLE UND die UNTERGRENZE des 95%-Wilson-
+#      Konfidenzintervalls > KERN_CI_UNTERGRENZE - erst dann ist "besser als
+#      Muenzwurf" statistisch belegt und nicht nur beobachtet.
+KERN_REIFE_N = 100
 KERN_WIN_SCHWELLE = 60.0
-BACKTEST_HORIZONTE = ("12W", "8W", "4W")  # laengster zuerst: reifer = aussagekraeftiger
+KERN_CI_UNTERGRENZE = 50.0
+BACKTEST_HORIZONTE = ("4W", "8W", "12W")  # Reihenfolge nur noch Tie-Break bei gleichem n
 
 AMPEL_ICON = {"gruen": "🟢", "gelb": "🟡", "rot": "🔴"}
 FLAGGE = {"USA": "US", "Europa": "EU"}
@@ -199,21 +217,66 @@ def _push(neu):
         markt = FLAGGE.get(s.get("markt"), s.get("markt") or "")
         name = (s.get("name") or "")[:22]
         zeilen.append(f"{icon}{status} {s['ticker']}  {s['score']:.0f}  {name} ({markt})")
-    titel = f"🏆 {len(neu)} neue{'s' if len(neu) == 1 else ''} Top-Setup{'' if len(neu) == 1 else 's'}"
+    # Titel bewusst ohne "🏆 Top": die Schnittmenge ist eine Vorauswahl, kein
+    # belegtes Guetesiegel (siehe _ist_kern) - gleiche Sprache wie das Panel
+    # auf der Startseite, damit Push und Oberflaeche nicht auseinanderlaufen.
+    titel = f"🧩 {len(neu)} neue{'s' if len(neu) == 1 else ''} Setup{'' if len(neu) == 1 else 's'}"
     ok = _sende_ntfy(titel, "\n".join(zeilen))
     print(f"Top-Setups-Push {'gesendet' if ok else 'fehlgeschlagen (kein Thema oder ntfy-Fehler)'}: {titel}")
 
 
+def _wilson(win_pct, n, z=1.96):
+    """95%-Konfidenzintervall einer Trefferquote nach Wilson (nicht die
+    Normalapproximation - die bricht bei kleinen n und Quoten nahe 0/100
+    zusammen, genau dort, wo dieser Backtest bisher seine Sterne vergeben hat).
+
+    Rueckgabe: (untergrenze_pct, obergrenze_pct), beide auf eine Nachkommastelle.
+    """
+    if not n:
+        return None, None
+    p = win_pct / 100.0
+    nenner = 1 + z * z / n
+    mitte = (p + z * z / (2 * n)) / nenner
+    spanne = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / nenner
+    return (round(max(0.0, mitte - spanne) * 100, 1),
+            round(min(1.0, mitte + spanne) * 100, 1))
+
+
 def _backtest_info(pivot_backtest, status):
-    """Reifsten verfuegbaren Horizont fuer einen Pivot-Status liefern (oder
-    None, wenn noch keiner KERN_REIFE_N gereifte Picks hat) - siehe
-    Modul-Docstring "Konfluenz & Kern-Setups"."""
+    """Belastbarste Forward-Test-Kohorte fuer einen Pivot-Status liefern.
+
+    Auswahl ueber die GROESSTE Stichprobe, nicht den laengsten Horizont (siehe
+    Kommentar bei KERN_REIFE_N oben). Liefert bewusst auch UNREIFE Kohorten
+    zurueck (Feld "reif") statt None - das Frontend soll die tatsaechlich
+    gemessene Zahl anzeigen koennen ("48,8 % bei n=1005") statt gar nichts;
+    ausgezeichnet (kern_setup) wird davon nur, was alle drei Bedingungen
+    erfuellt. None nur, wenn ueberhaupt keine Beobachtung vorliegt.
+    """
     block = ((pivot_backtest or {}).get("forward_realisiert") or {}).get(status) or {}
-    for label in BACKTEST_HORIZONTE:
-        s = block.get(label)
-        if s and (s.get("n") or 0) >= KERN_REIFE_N and s.get("win") is not None:
-            return {"win": s["win"], "n": s["n"], "horizont": label}
-    return None
+    kandidaten = [
+        (block[label]["n"], -BACKTEST_HORIZONTE.index(label), label, block[label])
+        for label in BACKTEST_HORIZONTE
+        if block.get(label) and (block[label].get("n") or 0) > 0
+        and block[label].get("win") is not None
+    ]
+    if not kandidaten:
+        return None
+    _, _, label, s = max(kandidaten)
+    ci_low, ci_high = _wilson(s["win"], s["n"])
+    return {
+        "win": s["win"], "n": s["n"], "horizont": label,
+        "ci_low": ci_low, "ci_high": ci_high,
+        "reif": s["n"] >= KERN_REIFE_N,
+    }
+
+
+def _ist_kern(bt):
+    """Kern-Setup nur bei belegter Ueberlegenheit - siehe KERN_REIFE_N oben."""
+    return bool(
+        bt and bt["reif"]
+        and bt["win"] >= KERN_WIN_SCHWELLE
+        and (bt["ci_low"] or 0) > KERN_CI_UNTERGRENZE
+    )
 
 
 def schreibe():
@@ -271,16 +334,20 @@ def schreibe():
             # Konfluenz & Kern-Setups (siehe Modul-Docstring):
             "quellen_unabhaengig": len((e.get("quellen") or {}).get("unabhaengig") or []),
             "backtest": bt,
-            "kern_setup": bool(bt and bt["win"] >= KERN_WIN_SCHWELLE),
+            "kern_setup": _ist_kern(bt),
         })
 
-    # Beste zuerst: Kern-Setup (Backtest-bestaetigte Kohorte, seit 2026-08-17)
-    # vor ARMED vor BREAKOUT, dann Pivot-Qualitaet. Bis 2026-08-02 war BREAKOUT
-    # vorn - der frische, unverzerrte Forward-Test (Signal-Hub/src/
-    # pivot_backtest.py --evaluate) zeigt aber ARMED bei 71% Win-Rate (n=83)
-    # gegen nur 34% bei BREAKOUT (n=90); der Retro-Backtest hatte BREAKOUT
-    # wegen Universums-Bias faelschlich gut aussehen lassen (siehe Bias-Hinweis
-    # in pivot_backtest.py). Bei genug neuen Forward-Daten erneut pruefen.
+    # Beste zuerst: Kern-Setup (belegte Kohorte, siehe _ist_kern) vor ARMED vor
+    # BREAKOUT, dann Pivot-Qualitaet.
+    #
+    # Stand 2026-08-23 (4W, groesster Datentopf): ARMED 48,8 % bei n=1005,
+    # BREAKOUT 35,2 % bei n=108. ARMED bleibt also vorn - aber nicht mehr wegen
+    # der urspruenglichen 71 % (n=83, Stand 2026-08-17), die sich bei
+    # zwoelffacher Stichprobe als Rauschen erwiesen haben, sondern nur noch als
+    # relative Reihung zweier Kohorten, von denen KEINE einen belegten Vorteil
+    # zeigt. Beide liegen im Bereich Muenzwurf bzw. darunter; die absolute
+    # Aussage "das ist ein gutes Setup" traegt derzeit keine der beiden.
+    # Erneut pruefen, sobald eine Kohorte die _ist_kern-Bedingungen erfuellt.
     rang = {"ARMED": 1, "BREAKOUT": 0}
     setups.sort(key=lambda s: (s["kern_setup"], rang.get(s["pivot_status"], 0), s["qualitaet"] or 0),
                 reverse=True)
