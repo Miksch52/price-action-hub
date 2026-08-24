@@ -786,6 +786,19 @@ function mtsHauptappBasis(){
   return `${location.protocol}//${location.hostname}:8090`;
 }
 
+// Was in JEDER Karte gleich waere, gehoert nicht in jede Karte (seit 2026-08-24,
+// gleiches Prinzip wie im Top-Setups-Panel der Startseite). Konkreter Fall: die
+// Standardansicht filtert auf "📈 Nur bullisch" - dann trug das Einstufungs-Badge
+// in ALLEN 91 Karten denselben Text "Bullisch" und wiederholte damit nur die
+// Filterbedingung, die oben ohnehin eingestellt ist. Bei "Richtung: Alle" (oder
+// gemischtem Ergebnis) unterscheidet es die Karten wieder und wird gezeigt.
+let EINSTUF_EINHEITLICH = false;
+function einstufEinheitlich(list){
+  if(list.length < 2) return false;
+  const s = new Set(list.map(t => einstufFor(t.pa_score).txt));
+  return s.size === 1;
+}
+
 function karte(t,rang){
   const m=t.muster||{};
   const eins=einstufFor(t.pa_score);
@@ -800,7 +813,7 @@ function karte(t,rang){
       </div>
       <div class="scorebox">
         <div class="score" style="color:${scoreColor(t.pa_score)}">${t.pa_score}</div>
-        <span class="einstuf ${eins.cls}">${eins.txt}</span>
+        ${EINSTUF_EINHEITLICH?'':`<span class="einstuf ${eins.cls}">${eins.txt}</span>`}
         ${t._konfluenz?`<div class="name" title="Konfluenz: ${t._konfluenz} von 5 Signalen (Trendbar, Bar-Counting, Breakout, Gap, Marktstadium) zeigen gleichzeitig in dieselbe Richtung">🔗 ${t._konfluenz}/5</div>`:''}
       </div>
     </div>
@@ -872,7 +885,11 @@ function render(){
   const meta=document.getElementById('meta');
   const d=DATA.erstellt?new Date(DATA.erstellt):null;
   const stand=d?d.toLocaleString('de-DE'):'—';
-  meta.textContent=`${list.length} von ${DATA.anzahl||0} Treffern · Stand ${stand}`;
+  // Einheitliche Einstufung einmal in die Kopfzeile statt in jede Karte
+  // (siehe einstufEinheitlich() oben).
+  EINSTUF_EINHEITLICH = einstufEinheitlich(list);
+  const einsTxt = EINSTUF_EINHEITLICH ? ` · alle ${einstufFor(list[0].pa_score).txt.toLowerCase()}` : '';
+  meta.textContent=`${list.length} von ${DATA.anzahl||0} Treffern${einsTxt} · Stand ${stand}`;
   updateFilterCount(list.length);
 
   document.getElementById('empty').style.display=list.length?'none':'block';
