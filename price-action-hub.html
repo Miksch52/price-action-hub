@@ -15,6 +15,7 @@
     --panel-bg:rgba(20,34,54,.5); --aurora-op:.5;
     --badge-bull-text:#7fe0c4; --badge-bear-text:#ff9a8c; --badge-neutral-text:#c9a0dc;
     --badge-failed-text:#ffb4ab; --stadium-acc-text:#e0c37f;
+    --chart-bg:rgba(8,16,28,.55); --chart-vol:#33485f;
   }
   :root[data-theme="light"]{
     color-scheme:light;
@@ -25,6 +26,7 @@
     --panel-bg:rgba(255,255,255,.65); --aurora-op:.16;
     --badge-bull-text:#146C4A; --badge-bear-text:#A13B27; --badge-neutral-text:#6B3FA0;
     --badge-failed-text:#99261A; --stadium-acc-text:#8A6A1F;
+    --chart-bg:rgba(255,255,255,.75); --chart-vol:#B7C2D0;
   }
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
@@ -115,7 +117,7 @@
   .e-bear{background:rgba(231,76,60,.2);color:var(--bad)}
   .e-neutral{background:rgba(138,160,184,.15);color:var(--muted)}
 
-  .chart{background:rgba(8,16,28,.55);border:1px solid var(--line);border-radius:6px;padding:2px}
+  .chart{background:var(--chart-bg);border:1px solid var(--line);border-radius:6px;padding:2px}
   .chart svg{width:100%;height:110px;display:block}
   .chleg{font-size:10px;color:var(--muted);display:flex;gap:10px;margin-top:3px}
   .chleg i{display:inline-block;width:8px;height:8px;vertical-align:middle;margin-right:3px;border-radius:2px}
@@ -263,7 +265,7 @@
     <span>Zahl hinter Muster-/Qualitäts-Chips und im Marktstadium-Dropdown: Vorausschau — wie viele Ticker im <em>gesamten</em> Datensatz dieses eine Kriterium erfüllen, unabhängig von sonst aktiven Filtern</span>
     <span>Ø Volumen: durchschnittliches Handelsvolumen (Kurs × Stück) der letzten 20 Tage — filtert marktenge Titel</span>
     <span>Abstand 6M-Hoch: % Abstand des aktuellen Kurses vom höchsten Hoch der letzten ~6 Monate</span>
-    <span>Kerzen: <i style="background:#2FB08D"></i>bullisch <i style="background:#E74C3C"></i>bärisch</span>
+    <span>Kerzen: <i style="background:var(--ok)"></i>bullisch <i style="background:var(--bad)"></i>bärisch</span>
     <span>Standardansicht: 📈 bullisch, Min. |Score| 2 (stärkste Werte) — ↺ Zurücksetzen stellt das wieder her</span>
     <span><span class="hebelb hebelb-gruen">🟢 Hebel bereit</span> alle Hebel-Kriterien erfüllt (Markt-Ampel, Trend-Template, Basis/VCP, Pivot-Trigger, kein Extended/Earnings/50-80/Klimax-Risiko — aus dem Signal-Hub übernommen)</span>
     <span><span class="hebelb hebelb-gelb">🟡 Hebel im Fokus</span> Markt/Trend intakt, aber noch nicht alle Kriterien erfüllt (Details im Badge-Tooltip) · kein Badge = für Hebel ungeeignet</span>
@@ -687,7 +689,7 @@ function candlechart(ch){
   let candles='';
   for(let i=0;i<n;i++){
     const up=c[i]>=o[i];
-    const col=up?'#2FB08D':'#E74C3C';
+    const col=up?'var(--ok)':'var(--bad)';
     const x=X(i);
     const yHigh=Y(h[i]), yLow=Y(l[i]);
     const yOpen=Y(o[i]), yClose=Y(c[i]);
@@ -697,7 +699,7 @@ function candlechart(ch){
   }
   const vmax=Math.max(...v,1);
   let vol='';
-  v.forEach((val,i)=>{ const bh=Math.max(0.4,(val/vmax)*volH); vol+=`<rect x="${(X(i)-bw/2).toFixed(1)}" y="${(H-bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="#33485f"/>`; });
+  v.forEach((val,i)=>{ const bh=Math.max(0.4,(val/vmax)*volH); vol+=`<rect x="${(X(i)-bw/2).toFixed(1)}" y="${(H-bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="var(--chart-vol)"/>`; });
   return `<div class="chart" title="~6 Monate Kerzenchart + Volumen"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${vol}${candles}</svg></div>`;
 }
 
