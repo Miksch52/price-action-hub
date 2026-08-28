@@ -84,3 +84,21 @@ HEBEL_LOGBUCH = os.path.join(LOKAL, "hebel_logbuch.json")
 # Persistenz-Prinzip wie HEBEL_LOGBUCH (R2 von Anfang an, kein lokaler
 # Dauerlauf als Ausweichquelle).
 MUSTER_LOGBUCH = os.path.join(LOKAL, "muster_logbuch.json")
+
+# Katalysator-Layer (seit 2026-08-28, siehe katalysator.py): braucht die
+# fertige Top-Setups-Liste (top_setups.py schreibt sie VOR diesem Schritt,
+# siehe run.py) als Eingabe - reiner Datei-Read, kein Cross-App-Import.
+SIGNAL_HUB_TOP_SETUPS_JSON = os.path.join(REPO_ROOT, "Signal-Hub", "data", "top_setups.json")
+KATALYSATOR_JSON = os.path.join(REPO_ROOT, "Signal-Hub", "data", "top_setups_katalysator.json")
+KATALYSATOR_JS = os.path.join(REPO_ROOT, "Signal-Hub", "data", "top_setups_katalysator.js")
+KATALYSATOR_BACKTEST = os.path.join(REPO_ROOT, "Signal-Hub", "data", "katalysator_backtest.json")
+KATALYSATOR_BACKTEST_JS = os.path.join(REPO_ROOT, "Signal-Hub", "data", "katalysator_backtest.js")
+# Ein-Lauf-pro-Tag-Gate (Kostengrund, siehe katalysator.py-Docstring) - lokal,
+# im Cloud-Job wie TOP_SETUPS_STATE/HEBEL_LOGBUCH per R2 gesichert, sonst
+# riefe jeder der vier taeglichen Cloud-Slots die kostenpflichtige API auf.
+KATALYSATOR_STATE = os.path.join(LOKAL, "katalysator_state.json")
+# Forward-Log: welche Top-Setup-Ticker hatten an welchem Tag einen erkannten
+# Katalysator (und welche nicht - die Kontrollgruppe), zu welchem Kurs -
+# Basis fuer katalysator_backtest.py. Gleiches Persistenz-Prinzip wie
+# HEBEL_LOGBUCH/MUSTER_LOGBUCH.
+KATALYSATOR_LOGBUCH = os.path.join(LOKAL, "katalysator_logbuch.json")

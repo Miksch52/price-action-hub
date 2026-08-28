@@ -15,6 +15,8 @@ import sys
 
 import scorer
 import top_setups
+import katalysator
+import katalysator_backtest
 import hebel_backtest
 import muster_backtest
 
@@ -28,6 +30,15 @@ def main():
         top_setups.schreibe()
     except Exception as ex:
         print(f"Top-Setups-Aggregat uebersprungen ({ex}).")
+    # Katalysator-Layer (seit 2026-08-28, siehe katalysator.py): braucht die
+    # gerade geschriebene top_setups.json, deshalb NACH top_setups.schreibe().
+    # Eigenes Tages-Gate (hoechstens 1x/Tag, Kostengrund) - scheitert nie hart,
+    # auch ohne gesetztes PERPLEXITY_API_KEY (dann reiner No-op).
+    try:
+        katalysator.taeglich_falls_faellig()
+        katalysator_backtest.log_und_evaluate()
+    except Exception as ex:
+        print(f"Katalysator-Layer uebersprungen ({ex}).")
     # Forward-Test der Hebel-Ampel (seit 2026-08-16): heutige gruen/gelb-
     # Ticker ins Logbuch + gereifte Picks auswerten. Scheitert nie hart (nur
     # kein Backtest-Panel), analog top_setups.
