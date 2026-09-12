@@ -18,6 +18,7 @@ import ssl
 import time
 import urllib.parse
 import urllib.request
+from datetime import datetime
 
 import pfade
 
@@ -46,10 +47,11 @@ def yahoo_chart(symbol, range_="1y"):
         return None
     r = res[0]
     meta = r.get("meta", {})
+    ts = r.get("timestamp") or []
     q = r.get("indicators", {}).get("quote", [{}])[0]
     co, vo = q.get("close") or [], q.get("volume") or []
     hi, lo, op = q.get("high") or [], q.get("low") or [], q.get("open") or []
-    opens, highs, lows, closes, volumes = [], [], [], [], []
+    opens, highs, lows, closes, volumes, dates = [], [], [], [], [], []
     for i in range(len(co)):
         c = co[i]
         v = vo[i] if i < len(vo) else None
@@ -60,10 +62,18 @@ def yahoo_chart(symbol, range_="1y"):
         highs.append(hi[i] if i < len(hi) and hi[i] is not None else c)
         lows.append(lo[i] if i < len(lo) and lo[i] is not None else c)
         opens.append(op[i] if i < len(op) and op[i] is not None else c)
+        # Datum je Bar (seit 2026-09-12, Systempruefung Punkt 5): der
+        # Index-Vergleich sucht damit den Startpunkt exakt ueber das
+        # Signaldatum statt ueber die Naeherung Kalendertage * 5/7. Yahoo
+        # liefert die Zeitstempel ohnehin in jeder Antwort mit; bis hierher
+        # wurden sie nur verworfen. Zusatzfeld, kein Bruch fuer Aufrufer, die
+        # weiterhin nur closes/highs/lows lesen.
+        dates.append(datetime.fromtimestamp(ts[i]).strftime("%Y-%m-%d")
+                     if i < len(ts) and ts[i] else None)
     if len(closes) < 60:
         return None
     return {"meta": meta, "opens": opens, "highs": highs, "lows": lows,
-            "closes": closes, "volumes": volumes}
+            "closes": closes, "volumes": volumes, "dates": dates}
 
 
 def lade_cache():

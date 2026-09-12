@@ -37,6 +37,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
+import index_vergleich
 import pfade
 import kursdaten
 
@@ -146,6 +147,12 @@ def evaluate():
     heute_dt = datetime.now().date()
     heute_str = heute_dt.isoformat()
     eimer = {k: {h: [] for h, _ in HORIZONTE} for k in KOHORTEN}
+    # Index-Vergleich (seit 2026-09-12, Systempruefung Punkt 5): ohne Abzug
+    # des Leitindex sagt eine Kohorten-Trefferquote nichts ueber das Muster,
+    # nur ueber den Markt im selben Zeitraum.
+    eimer_edge = {k: {h: [] for h, _ in HORIZONTE} for k in KOHORTEN}
+    idx_charts = index_vergleich.lade_index_charts(
+        kursdaten.hole_chart_cached, cache, heute_str)
     einzelfaelle = []
     aktuell = {}
     for e in lb:
@@ -165,13 +172,18 @@ def evaluate():
             continue
         ret = kurs / e["preis_signal"] - 1
         eimer[e["kohorte"]][bk].append(ret)
+        edge = index_vergleich.edge_fuer(idx_charts, e.get("markt"), e["datum"], tage, ret)
+        if edge is not None:
+            eimer_edge[e["kohorte"]][bk].append(edge)
         einzelfaelle.append({
             "ticker": e["ticker"], "yahoo_symbol": sym, "kohorte": e["kohorte"],
             "datum": e["datum"], "preis_signal": e["preis_signal"],
             "horizont": bk, "return_pct": round(ret * 100, 2),
+            "edge_idx_pct": round(edge * 100, 2) if edge is not None else None,
         })
     kursdaten.speichere_cache(cache)
-    fr = {k: {h: _stats(eimer[k][h]) for h, _ in HORIZONTE} for k in eimer}
+    fr = {k: {h: index_vergleich.ergaenze_edge(_stats(eimer[k][h]), eimer_edge[k][h])
+              for h, _ in HORIZONTE} for k in eimer}
     return fr, einzelfaelle
 
 
@@ -186,13 +198,18 @@ def _schreibe(out):
 
 
 def _druck_tabelle(fr):
-    print(f"{'Kohorte':22s}{'Hor':5s}{'n':>5s}{'Win%':>7s}{'Ø%':>8s}")
+    print(f"{'Kohorte':22s}{'Hor':5s}{'n':>5s}{'Win%':>7s}{'Ø%':>8s}{'ØvsIdx':>9s}{'>Idx%':>7s}")
     for kohorte in KOHORTEN:
         for label, _ in HORIZONTE:
             s = fr.get(kohorte, {}).get(label) or {}
             if not s.get("n"):
                 continue
-            print(f"{kohorte:22s}{label:5s}{s['n']:5d}{s['win']:7.1f}{s['avg']:8.2f}")
+            # Index-Spalten (seit 2026-09-12), siehe rotation_backtest.py
+            e_avg = s.get("edge_idx_avg")
+            e_win = s.get("edge_idx_win")
+            print(f"{kohorte:22s}{label:5s}{s['n']:5d}{s['win']:7.1f}{s['avg']:8.2f}"
+                  f"{(e_avg if e_avg is not None else 0):+9.2f}"
+                  f"{(e_win if e_win is not None else 0):7.1f}")
 
 
 def log_und_evaluate():
