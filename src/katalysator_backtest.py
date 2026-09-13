@@ -34,6 +34,7 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 
+import index_vergleich
 import pfade
 import kursdaten
 
@@ -134,28 +135,33 @@ def evaluate():
     heute_str = heute_dt.isoformat()
     eimer = {s: {h: [] for h, _ in HORIZONTE} for s in STUFEN}
     einzelfaelle = []
-    aktuell = {}
+    charts = {}
     for e in lb:
         try:
             tage = (heute_dt - datetime.strptime(e["datum"], "%Y-%m-%d").date()).days
         except Exception:
             continue
-        bk = _bucket(tage)
-        if not bk or e.get("stufe") not in eimer:
+        if e.get("stufe") not in eimer:
             continue
         sym = e.get("ticker")
-        if sym not in aktuell:
-            d = kursdaten.hole_chart_cached(sym, cache, heute_str)
-            aktuell[sym] = (d.get("closes")[-1] if d and d.get("closes") else None)
-        kurs = aktuell[sym]
-        if not kurs or not e.get("preis_signal"):
+        if sym not in charts:
+            charts[sym] = kursdaten.hole_chart_cached(sym, cache, heute_str) or {}
+        # Feste Fenster (seit 2026-09-13, Systempruefung Punkt 2), siehe
+        # index_vergleich.fenster_returns: Signalkurs gegen den Schlusskurs genau
+        # 21/50/78 Kalendertage spaeter. Die Episode zaehlt in jedem erreichten
+        # Horizont; bk/ret meinen den laengsten davon (Einzelfall-Liste).
+        rets = index_vergleich.fenster_returns(charts[sym], e["datum"], e.get("preis_signal"))
+        bk, ret = index_vergleich.laengster_horizont(rets)
+        if bk is None:
             continue
-        ret = kurs / e["preis_signal"] - 1
-        eimer[e["stufe"]][bk].append(ret)
+        for h, r in rets.items():
+            if r is not None:
+                eimer[e["stufe"]][h].append(r)
         einzelfaelle.append({
             "ticker": e["ticker"], "stufe": e["stufe"], "klasse": e.get("klasse"),
             "datum": e["datum"], "preis_signal": e["preis_signal"],
             "horizont": bk, "return_pct": round(ret * 100, 2),
+            "fenster": {h: round(r * 100, 2) for h, r in rets.items() if r is not None},
         })
     kursdaten.speichere_cache(cache)
     fr = {s: {h: _stats(eimer[s][h]) for h, _ in HORIZONTE} for s in eimer}
@@ -187,11 +193,13 @@ def log_und_evaluate():
     fr, einzelfaelle = evaluate()
     out = {
         "erstellt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "hinweis": ("Forward-Test: Kurs am Signaltag (katalysator.py-Einordnung mit/ohne "
-                    "erkannten Katalysator) vs. aktueller Kurs, Kohorten nach Alter "
-                    "(>=21/50/78 Kalendertage). Unverzerrt (Einordnung stand vor dem Ergebnis "
-                    "fest). Nur Ticker mit tatsaechlicher Katalysator-Antwort des jeweiligen "
-                    "Tages gezaehlt - nicht abgefragte Ticker fliessen in KEINE Kohorte ein."),
+        "hinweis": ("Forward-Test mit festen Fenstern (seit 2026-09-13): Kurs am Signaltag "
+                    "(katalysator.py-Einordnung mit/ohne erkannten Katalysator) vs. "
+                    "Schlusskurs genau 21/50/78 Kalendertage spaeter; eine Episode zaehlt in "
+                    "jedem erreichten Horizont, ihr Wert bleibt danach fest. Unverzerrt "
+                    "(Einordnung stand vor dem Ergebnis fest). Nur Ticker mit tatsaechlicher "
+                    "Katalysator-Antwort des jeweiligen Tages gezaehlt - nicht abgefragte "
+                    "Ticker fliessen in KEINE Kohorte ein."),
         "forward_realisiert": fr,
         "forward_einzelfaelle": einzelfaelle,
     }
