@@ -555,7 +555,18 @@ function renderHebelBacktest(){
   }
   html+='</table>';
   html+=`<p style="margin:8px 0 0;max-width:900px">${HEBELBT.hinweis||''}</p>`;
-  if(!zeilen){ box.style.display='none'; return; }
+  if(!zeilen){
+    // Reift noch (Systempruefung Punkt 8, 13.09.): das Logbuch wurde
+    // ausgewertet, aber keine Episode hat den kuerzesten Horizont (4W)
+    // erreicht - genau der Zustand aller sechs Logbuecher direkt nach der
+    // Aufbewahrungs-Korrektur vom 13.09. Bisher verschwand das Panel dann
+    // komplett, nicht von einem echten Fehler (Datei fehlt) unterscheidbar.
+    el.innerHTML = '<p style="margin:0">🌱 Reift noch — das Logbuch wurde ausgewertet, aber noch keine Episode '
+      + 'ist alt genug für den kürzesten Horizont (4W = 21 Kalendertage).</p>';
+    if(cnt) cnt.textContent=`Stand ${(HEBELBT.erstellt||'').slice(0,10)}`;
+    box.style.display='';
+    return;
+  }
   el.innerHTML=html;
   if(cnt) cnt.textContent=`${(HEBELBT.forward_einzelfaelle||[]).length} Episoden · Stand ${(HEBELBT.erstellt||'').slice(0,10)}`;
   box.style.display='';
@@ -597,7 +608,14 @@ function renderMusterBacktest(){
   }
   html+='</table>';
   html+=`<p style="margin:8px 0 0;max-width:900px">${MUSTERBT.hinweis||''}</p>`;
-  if(!zeilen){ box.style.display='none'; return; }
+  if(!zeilen){
+    // Reift noch (Systempruefung Punkt 8, 13.09.) - siehe renderHebelBacktest().
+    el.innerHTML = '<p style="margin:0">🌱 Reift noch — das Logbuch wurde ausgewertet, aber noch keine Episode '
+      + 'ist alt genug für den kürzesten Horizont (4W = 21 Kalendertage).</p>';
+    if(cnt) cnt.textContent=`Stand ${(MUSTERBT.erstellt||'').slice(0,10)}`;
+    box.style.display='';
+    return;
+  }
   el.innerHTML=html;
   if(cnt) cnt.textContent=`${(MUSTERBT.forward_einzelfaelle||[]).length} Episoden · Stand ${(MUSTERBT.erstellt||'').slice(0,10)}`;
   box.style.display='';
