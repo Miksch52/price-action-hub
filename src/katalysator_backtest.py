@@ -32,7 +32,7 @@ Ausgabe: Signal-Hub/data/katalysator_backtest.json (+ .js).
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pfade
 import kursdaten
@@ -109,7 +109,16 @@ def log_heute():
             "stufe": stufe, "klasse": k.get("klasse"), "preis_signal": s.get("preis"),
         })
         neu += 1
-    lb = lb[-5000:]
+    # Aufbewahrung nach ALTER statt nach Eintragszahl (seit 2026-09-13). Die
+    # fruehere Kappe "lb[-N:]" skalierte mit der Treffermenge: bei ~417
+    # Hebel- bzw. ~172 Pivot-Eintraegen je Tag behielt sie in der Cloud nur
+    # 12 bzw. 29 Tage und loeschte Episoden, bevor sie 4W/8W/12W erreichen
+    # konnten (Hebel-Backtest dauerhaft n=0, Pivot nie 8W/12W; Pivot-
+    # Episoden 02.07.-15.08.2026 dadurch unwiederbringlich verloren).
+    # 120 Tage = laengster Horizont (78 Kalendertage) plus Puffer.
+    aufbewahrung_tage = 120
+    grenze = (datetime.now().date() - timedelta(days=aufbewahrung_tage)).isoformat()
+    lb = [e for e in lb if (e.get("datum") or "") >= grenze]
     _logbuch_save(lb)
     print(f"Katalysator-Forward-Logbuch: {neu} neue Picks ergaenzt (gesamt {len(lb)}).")
 
