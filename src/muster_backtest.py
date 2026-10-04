@@ -42,6 +42,7 @@ import pfade
 import kursdaten
 
 HORIZONTE = [("4W", 21), ("8W", 50), ("12W", 78)]   # Mindest-KALENDERtage je Kohorte
+DUBLETTEN = 0   # vom letzten evaluate() herausgefilterte Dubletten (seit 2026-10-04)
 KOHORTEN = ("breakout_up", "breakout_down",
             "trendbar_stark_bull", "trendbar_stark_bear",
             "score_bullisch", "score_baerisch")
@@ -116,22 +117,33 @@ def log_heute():
     daten = json.load(open(pfade.PRICEACTION_JSON, encoding="utf-8"))
     heute = datetime.now().strftime("%Y-%m-%d")
     lb = _logbuch_load()
-    bekannt = {(e["datum"], e["ticker"], e["kohorte"]) for e in lb}
+    # Doppel-Pruefung ueber den belegten Handelstag statt das Schreibdatum
+    # (seit 2026-10-04, siehe index_vergleich.logbuch_schluessel): Sa-, So- und
+    # Mo-Lauf sehen dieselben Freitagskurse und legen nur EINEN Eintrag an.
+    bekannt = {index_vergleich.logbuch_schluessel(e, "ticker", "kohorte") for e in lb}
+    cache = kursdaten.lade_cache()
+    idx_charts = index_vergleich.lade_index_charts(kursdaten.hole_chart_cached, cache, heute)
     neu = 0
     for t in daten.get("treffer", []):
         preis = t.get("preis")
         if not preis or not t.get("ticker"):
             continue
+        ht = index_vergleich.handelstag_fuer(idx_charts, t.get("markt"), t.get("yahoo_symbol") or t["ticker"])
         for kohorte in _kohorten_fuer(t):
-            key = (heute, t["ticker"], kohorte)
-            if key in bekannt:
-                continue
-            lb.append({
+            eintrag = {
                 "datum": heute, "ticker": t["ticker"],
                 "yahoo_symbol": t.get("yahoo_symbol"), "markt": t.get("markt"),
                 "kohorte": kohorte, "preis_signal": preis,
-            })
+            }
+            if ht:
+                eintrag["handelstag"] = ht
+            key = index_vergleich.logbuch_schluessel(eintrag, "ticker", "kohorte")
+            if key in bekannt:
+                continue
+            lb.append(eintrag)
+            bekannt.add(key)
             neu += 1
+    kursdaten.speichere_cache(cache)
     # Aufbewahrung nach ALTER statt nach Eintragszahl (seit 2026-09-13). Die
     # fruehere Kappe "lb[-N:]" skalierte mit der Treffermenge: bei ~417
     # Hebel- bzw. ~172 Pivot-Eintraegen je Tag behielt sie in der Cloud nur
@@ -164,6 +176,12 @@ def evaluate():
         kursdaten.hole_chart_cached, cache, heute_str)
     einzelfaelle = []
     charts = {}
+    # Dubletten-Filter (seit 2026-10-04, siehe index_vergleich.ist_dublette):
+    # eine Episode je Ticker, Kohorte und Startbar - Sa/So/Mo bzw. Feiertag +
+    # Folgetag zaehlten vorher mehrfach mit identischem Ergebnis.
+    global DUBLETTEN
+    DUBLETTEN = 0
+    gesehen = set()
     for e in lb:
         try:
             tage = (heute_dt - datetime.strptime(e["datum"], "%Y-%m-%d").date()).days
@@ -178,11 +196,15 @@ def evaluate():
         # index_vergleich.fenster_returns: Signalkurs gegen den Schlusskurs genau
         # 21/50/78 Kalendertage spaeter. Die Episode zaehlt in jedem erreichten
         # Horizont; bk/ret meinen den laengsten davon (Einzelfall-Liste).
-        rets = index_vergleich.fenster_returns(charts[sym], e["datum"], e.get("preis_signal"))
+        start = index_vergleich.start_datum(e)
+        rets = index_vergleich.fenster_returns(charts[sym], start, e.get("preis_signal"))
         bk, ret = index_vergleich.laengster_horizont(rets)
         if bk is None:
             continue
-        edges = index_vergleich.fenster_edges(idx_charts, e.get("markt"), e["datum"], rets,
+        if index_vergleich.ist_dublette(gesehen, charts[sym], start, sym, e["kohorte"]):
+            DUBLETTEN += 1
+            continue
+        edges = index_vergleich.fenster_edges(idx_charts, e.get("markt"), start, rets,
                                               pick_chart=charts[sym], ticker=sym)
         for h, r in rets.items():
             if r is None:
@@ -193,7 +215,8 @@ def evaluate():
         edge = edges[bk]
         einzelfaelle.append({
             "ticker": e["ticker"], "yahoo_symbol": sym, "kohorte": e["kohorte"],
-            "datum": e["datum"], "preis_signal": e["preis_signal"],
+            "datum": e["datum"], "handelstag": e.get("handelstag"),
+            "preis_signal": e["preis_signal"],
             "horizont": bk, "return_pct": round(ret * 100, 2),
             "edge_idx_pct": round(edge * 100, 2) if edge is not None else None,
             "fenster": {h: round(r * 100, 2) for h, r in rets.items() if r is not None},
@@ -241,14 +264,19 @@ def log_und_evaluate():
                     "genau 21/50/78 Kalendertage spaeter; eine Episode zaehlt in jedem "
                     "erreichten Horizont, ihr Wert bleibt danach fest. Unverzerrt "
                     "(Einstufung stand vor dem Ergebnis fest). Ein Ticker kann an einem Tag "
-                    "mehrere Kohorten gleichzeitig treffen (z.B. Breakout UND Score bullisch)."),
+                    "mehrere Kohorten gleichzeitig treffen (z.B. Breakout UND Score bullisch). "
+                    "Je Ticker, Kohorte und Starttag zaehlt nur eine Episode (seit 2026-10-04: "
+                    "Sa/So/Mo bzw. Feiertag + Folgetag waren vorher Dubletten)."),
         "forward_realisiert": fr,
         "forward_einzelfaelle": einzelfaelle,
+        "dubletten_gefiltert": DUBLETTEN,
     }
     _schreibe(out)
     if einzelfaelle:
         print(f"\n=== Price-Action-Muster Forward-Test ({len(einzelfaelle)} gereifte Einzelfaelle) ===")
         _druck_tabelle(fr)
+    if DUBLETTEN:
+        print(f"Dubletten herausgefiltert (gleicher Starttag): {DUBLETTEN}")
     print(f"Gespeichert: {pfade.MUSTER_BACKTEST}")
     return fr, einzelfaelle
 

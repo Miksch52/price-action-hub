@@ -39,6 +39,7 @@ import pfade
 import kursdaten
 
 HORIZONTE = [("4W", 21), ("8W", 50), ("12W", 78)]   # Mindest-KALENDERtage je Kohorte
+DUBLETTEN = 0   # vom letzten evaluate() herausgefilterte Dubletten (seit 2026-10-04)
 STUFEN = ("mit_katalysator", "ohne_katalysator")
 
 
@@ -95,21 +96,32 @@ def log_heute():
 
     heute = datetime.now().strftime("%Y-%m-%d")
     lb = _logbuch_load()
-    bekannt = {(e["datum"], e["ticker"]) for e in lb}
+    # Doppel-Pruefung ueber den belegten Handelstag statt das Schreibdatum
+    # (seit 2026-10-04, siehe index_vergleich.logbuch_schluessel): Sa-, So- und
+    # Mo-Lauf sehen dieselben Freitagskurse und legen nur EINEN Eintrag an.
+    bekannt = {index_vergleich.logbuch_schluessel(e, "ticker") for e in lb}
+    cache = kursdaten.lade_cache()
+    idx_charts = index_vergleich.lade_index_charts(kursdaten.hole_chart_cached, cache, heute)
     neu = 0
     for ticker, k in kat.items():
         s = preise.get(ticker)
         if not s or not s.get("preis"):
             continue
-        key = (heute, ticker)
-        if key in bekannt:
-            continue
         stufe = "mit_katalysator" if k.get("klasse") not in (None, "keiner") else "ohne_katalysator"
-        lb.append({
+        eintrag = {
             "datum": heute, "ticker": ticker, "markt": s.get("markt"),
             "stufe": stufe, "klasse": k.get("klasse"), "preis_signal": s.get("preis"),
-        })
+        }
+        ht = index_vergleich.handelstag_fuer(idx_charts, s.get("markt"), ticker)
+        if ht:
+            eintrag["handelstag"] = ht
+        key = index_vergleich.logbuch_schluessel(eintrag, "ticker")
+        if key in bekannt:
+            continue
+        lb.append(eintrag)
+        bekannt.add(key)
         neu += 1
+    kursdaten.speichere_cache(cache)
     # Aufbewahrung nach ALTER statt nach Eintragszahl (seit 2026-09-13). Die
     # fruehere Kappe "lb[-N:]" skalierte mit der Treffermenge: bei ~417
     # Hebel- bzw. ~172 Pivot-Eintraegen je Tag behielt sie in der Cloud nur
@@ -136,6 +148,13 @@ def evaluate():
     eimer = {s: {h: [] for h, _ in HORIZONTE} for s in STUFEN}
     einzelfaelle = []
     charts = {}
+    # Dubletten-Filter (seit 2026-10-04, siehe index_vergleich.ist_dublette):
+    # eine Episode je Ticker und Startbar (wie beim Loggen
+    # ohne Stufe: die Einordnung desselben Kursstands ist dieselbe) - Sa/So/Mo bzw. Feiertag +
+    # Folgetag zaehlten vorher mehrfach mit identischem Ergebnis.
+    global DUBLETTEN
+    DUBLETTEN = 0
+    gesehen = set()
     for e in lb:
         try:
             tage = (heute_dt - datetime.strptime(e["datum"], "%Y-%m-%d").date()).days
@@ -150,16 +169,21 @@ def evaluate():
         # index_vergleich.fenster_returns: Signalkurs gegen den Schlusskurs genau
         # 21/50/78 Kalendertage spaeter. Die Episode zaehlt in jedem erreichten
         # Horizont; bk/ret meinen den laengsten davon (Einzelfall-Liste).
-        rets = index_vergleich.fenster_returns(charts[sym], e["datum"], e.get("preis_signal"))
+        start = index_vergleich.start_datum(e)
+        rets = index_vergleich.fenster_returns(charts[sym], start, e.get("preis_signal"))
         bk, ret = index_vergleich.laengster_horizont(rets)
         if bk is None:
+            continue
+        if index_vergleich.ist_dublette(gesehen, charts[sym], start, sym):
+            DUBLETTEN += 1
             continue
         for h, r in rets.items():
             if r is not None:
                 eimer[e["stufe"]][h].append(r)
         einzelfaelle.append({
             "ticker": e["ticker"], "stufe": e["stufe"], "klasse": e.get("klasse"),
-            "datum": e["datum"], "preis_signal": e["preis_signal"],
+            "datum": e["datum"], "handelstag": e.get("handelstag"),
+            "preis_signal": e["preis_signal"],
             "horizont": bk, "return_pct": round(ret * 100, 2),
             "fenster": {h: round(r * 100, 2) for h, r in rets.items() if r is not None},
         })
@@ -199,14 +223,19 @@ def log_und_evaluate():
                     "jedem erreichten Horizont, ihr Wert bleibt danach fest. Unverzerrt "
                     "(Einordnung stand vor dem Ergebnis fest). Nur Ticker mit tatsaechlicher "
                     "Katalysator-Antwort des jeweiligen Tages gezaehlt - nicht abgefragte "
-                    "Ticker fliessen in KEINE Kohorte ein."),
+                    "Ticker fliessen in KEINE Kohorte ein. "
+                    "Je Ticker und Starttag zaehlt nur eine Episode (seit 2026-10-04: "
+                    "Sa/So/Mo bzw. Feiertag + Folgetag waren vorher Dubletten)."),
         "forward_realisiert": fr,
         "forward_einzelfaelle": einzelfaelle,
+        "dubletten_gefiltert": DUBLETTEN,
     }
     _schreibe(out)
     if einzelfaelle:
         print(f"\n=== Katalysator-Layer Forward-Test ({len(einzelfaelle)} gereifte Einzelfaelle) ===")
         _druck_tabelle(fr)
+    if DUBLETTEN:
+        print(f"Dubletten herausgefiltert (gleicher Starttag): {DUBLETTEN}")
     print(f"Gespeichert: {pfade.KATALYSATOR_BACKTEST}")
     return fr, einzelfaelle
 
