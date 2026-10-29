@@ -158,6 +158,25 @@
     background-image:radial-gradient(rgba(255,255,255,.6) .5px,transparent .5px);background-size:3px 3px}
   @media(prefers-reduced-motion:reduce){.aurora::before,.aurora::after{animation:none}}
   @media(max-width:600px){.grid{grid-template-columns:1fr}}
+
+  /* Kopfbereich eingeklappt (2026-10-29, auf Handy und Desktop): standardmäßig
+     bleibt nur eine schmale Zeile mit Titel, Markt-Chip und ☰. ☰ klappt Meta,
+     Aktionen, Hell/Dunkel und Filter manuell auf. Aufgeklappt scrollt der Kopf
+     mit weg; zugeklappt bleibt die schmale Zeile am Desktop oben haften. */
+  #kopffab{display:none}
+  header{padding-top:8px;padding-bottom:8px;padding-left:calc(env(safe-area-inset-left,0px) + 100px)}
+  header.kopf-zu > :not(.htop){display:none}
+  header.kopf-zu .htop > :not(h1):not(#marktchip):not(#kopftoggle){display:none !important}
+  header.kopf-zu h1{font-size:16px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  header.kopf-zu .htop{gap:8px;flex-wrap:nowrap}
+  header:not(.kopf-zu){position:static}
+  @media(max-width:700px){
+    header{position:static}
+    #kopffab{position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:30;
+      width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--bg2);
+      color:var(--txt);font-size:20px;box-shadow:0 3px 12px rgba(0,0,0,.35);align-items:center;justify-content:center}
+    #kopffab.sichtbar{display:flex}
+  }
 </style>
 </head>
 <body>
@@ -173,6 +192,7 @@
     <a class="btn ghost" href="https://claude.ai/code/artifact/c77fbbf6-7d1e-4c99-87e5-1714328279e3" target="_blank" title="Betriebsanleitung: Symbol-Legende, Filter-Referenz, Datenherkunft" style="text-decoration:none;display:inline-flex;align-items:center">📖 Anleitung</a>
     <button class="btn ghost" id="cloudbtn" onclick="triggerCloudWorkflow('Miksch52','signal-hub','pipeline.yml',this,'Signal-Hub + Price-Action-Hub-Update')">☁️ Cloud-Scan starten</button>
     <button class="btn ghost" id="watchlistBtn" onclick="erstelleWatchlist()" title="Aktuell gefilterte Titel (Markt/Muster/Qualität/Suche) als TradingView-importierbare .txt in Watchlisten/Price-Action-Hub/ im MTS-Hauptordner speichern — nur mit lokalem Server (Mac mini)">🗒️ Watchlist erstellen</button>
+    <button class="icon-btn" id="kopftoggle" type="button" aria-expanded="false" aria-label="Kopfbereich auf-/zuklappen" title="Meta, Aktionen und Filter ein-/ausblenden">☰</button>
     <button class="icon-btn" id="theme-toggle" title="Hell/Dunkel umschalten" aria-label="Hell/Dunkel umschalten" type="button">🌙</button>
   </div>
   <details id="filterbox" class="filterbox">
@@ -248,6 +268,7 @@
    </div>
   </details>
 </header>
+<button id="kopffab" type="button" aria-label="Nach oben zu Filtern und Aktionen" title="Nach oben: Filter &amp; Aktionen">☰</button>
 
 <main>
   <details id="legendbox" class="filterbox">
@@ -984,28 +1005,6 @@ document.getElementById('resetbtn').addEventListener('click',()=>{
   render();
 });
 
-// Auto-Einklappen der Filterleiste beim Scrollen nach unten (seit 2026-08-17,
-// Muster 1:1 aus Signal-Hub/signal-hub.html übernommen, siehe dort für die
-// ausführliche Begründung): mehr Platz für die Ergebniskarten auf dem iPhone,
-// die sticky Filterleiste nahm sonst dauerhaft viel Bildschirmfläche weg.
-// Schließt alle offenen <details class="filterbox">-Panels (Filter &
-// Sortierung, Legende, Backtest-Panels), sobald über einen kleinen
-// Schwellenwert nach unten gescrollt wird. Bewusst KEIN automatisches
-// Wiederaufklappen beim Hochscrollen - der Nutzer klickt gezielt wieder auf.
-(function(){
-  let letzterScrollY=window.scrollY, letzteZeit=0;
-  window.addEventListener('scroll', () => {
-    const jetzt=Date.now();
-    if(jetzt-letzteZeit<100) return;
-    letzteZeit=jetzt;
-    const y=window.scrollY;
-    if(y>letzterScrollY && y>80){
-      document.querySelectorAll('details.filterbox[open]').forEach(d=>d.open=false);
-    }
-    letzterScrollY=y;
-  }, {passive:true});
-})();
-
 (async function init(){
   await ladeDaten();
   vorberechnen();
@@ -1015,7 +1014,6 @@ document.getElementById('resetbtn').addEventListener('click',()=>{
   ladeMusterBacktest();  // optional, blockiert den ersten Render nicht
   // Filterleiste: am Desktop offen, auf dem iPhone eingeklappt (entlastet den
   // Schirm) - gleiches Muster wie Signal-Hub/signal-hub.html.
-  if(window.innerWidth>700){ const el=document.getElementById('filterbox'); if(el) el.open=true; }
 })();
 
 // Theme-Toggle (Grundzustand wurde bereits im <head> ohne Flackern gesetzt)
@@ -1032,6 +1030,18 @@ document.getElementById('resetbtn').addEventListener('click',()=>{
     localStorage.setItem(KEY, next);
     sync();
   });
+})();
+
+// Handy-Kopf: standardmäßig eingeklappt (CSS .kopf-zu greift nur ≤700px),
+// ☰ klappt auf, der schwebende Knopf springt hoch und klappt auf.
+(function(){
+  const kopf=document.querySelector('header'), tg=document.getElementById('kopftoggle'), fab=document.getElementById('kopffab');
+  if(!kopf||!tg||!fab) return;
+  kopf.classList.add('kopf-zu');
+  const setze=(offen)=>{ kopf.classList.toggle('kopf-zu',!offen); tg.setAttribute('aria-expanded',offen); };
+  tg.addEventListener('click',()=>setze(kopf.classList.contains('kopf-zu')));
+  fab.addEventListener('click',()=>{ setze(true); window.scrollTo({top:0,behavior:'smooth'}); });
+  window.addEventListener('scroll',()=>fab.classList.toggle('sichtbar',window.scrollY>400),{passive:true});
 })();
 </script>
 </body>
