@@ -1,0 +1,43 @@
+name: Tests
+
+# Testlauf bei Push auf Code (seit 2026-11-13, Systemanalyse Vorschlag 12).
+# Die Tests liegen im Repo signal-hub (Signal-Hub/tests/) und pruefen auch
+# diesen Code; hier werden alle drei oeffentlichen Repos nebeneinander
+# ausgecheckt. Oeffentliches Repo = unbegrenzte Actions-Minuten.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - '.github/workflows/tests.yml'
+  workflow_dispatch: {}
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Signal-Hub auschecken (oeffentlich, kein Token)
+        uses: actions/checkout@v4
+        with:
+          repository: Miksch52/signal-hub
+          path: Signal-Hub
+
+      - uses: actions/checkout@v4
+        with:
+          path: Price-Action-Hub
+
+      - name: Rotation-Dashboard auschecken (oeffentlich, kein Token)
+        uses: actions/checkout@v4
+        with:
+          repository: Miksch52/rotation-dashboard
+          path: Rotation-Dashboard
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: pip install pytest
+
+      - name: Pytest
+        run: python3 -m pytest Signal-Hub/tests -q
