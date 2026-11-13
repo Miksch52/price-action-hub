@@ -24,7 +24,8 @@ Price-Action-Hub/src/run.py nach dem PA-Scorer):
 
 "Top-Setup" = die Schnittmenge, die man sonst ueber drei Dashboards manuell
 kreuzen muesste: score >= kauf_kandidat UND pivot_status in {ARMED,BREAKOUT}
-UND pa_score > 0. Das Markt-Regime je Markt und der naechste Earnings-Termin
+UND pa_score > 0 UND (seit 2026-11-13) Stop-Abstand <= STOP_MAX_PCT - siehe
+Kommentar bei der Konstante, reine Risikoentscheidung. Das Markt-Regime je Markt und der naechste Earnings-Termin
 werden PRO EINTRAG mitgeliefert (nicht hart gefiltert) - das Frontend
 entscheidet ueber die Darstellung (gruenes Regime = aktiv; gelb/rot bzw.
 Earnings-Sperre = mit Minervini-Hinweis), sonst waere das Panel an jedem
@@ -123,6 +124,33 @@ KERN_REIFE_N = 100
 KERN_WIN_SCHWELLE = 60.0
 KERN_CI_UNTERGRENZE = 50.0
 BACKTEST_HORIZONTE = ("4W", "8W", "12W")  # Reihenfolge nur noch Tie-Break bei gleichem n
+
+# Stop-Regel (seit 2026-11-13): harter Filter, anders als Regime/Earnings.
+# REINE RISIKOENTSCHEIDUNG des Nutzers, KEIN Backtest-Befund (CLAUDE.md,
+# "Backtest-Pflicht"): das Regelwerk des Trainingsplans erlaubt hoechstens
+# 10 % Stop-Abstand. Ein Setup, dessen technischer Stop weiter weg liegt, ist
+# nach der eigenen Regel nicht handelbar und gehoert deshalb nicht in die
+# Liste - am 13.11.2026 standen zwei von fuenf Setups mit 15-16 % darin.
+# Bezug ist der Einstieg: bei ARMED der Pivot (dort wird gekauft), bei
+# BREAKOUT der aktuelle Kurs. Fehlt der Stop, laesst sich die Regel nicht
+# pruefen - der Eintrag bleibt drin (stop_abstand_pct = None).
+# Dieselbe Zahl steht in pre_trade_check.py / Trainingsplan; hier bewusst als
+# eigene Konstante (Entflechtung, kein Cross-App-Import).
+STOP_MAX_PCT = 10.0
+
+
+def _stop_abstand_pct(status, preis, pivot, stop):
+    """Abstand Einstieg -> Stop in Prozent des Einstiegs, None wenn nicht
+    berechenbar. Einstieg: Pivot bei ARMED, sonst aktueller Kurs."""
+    einstieg = pivot if status == "ARMED" and pivot else preis
+    try:
+        einstieg, stop = float(einstieg), float(stop)
+    except (TypeError, ValueError):
+        return None
+    if einstieg <= 0 or stop <= 0:
+        return None
+    return round((1 - stop / einstieg) * 100, 1)
+
 
 AMPEL_ICON = {"gruen": "🟢", "gelb": "🟡", "rot": "🔴"}
 FLAGGE = {"USA": "US", "Europa": "EU"}
@@ -295,6 +323,7 @@ def schreibe():
              for e in (pa or {}).get("treffer", [])}
 
     setups = []
+    stop_zu_weit = []   # wegen STOP_MAX_PCT ausgefiltert (nur Ticker + Abstand)
     for e in signals["treffer"]:
         if e.get("score", 0) < kauf:
             continue
@@ -303,6 +332,11 @@ def schreibe():
             continue
         pa_score = pamap.get(e.get("ticker"))
         if pa_score is None or pa_score <= 0:
+            continue
+        abstand = _stop_abstand_pct(p.get("pivot_status"), e.get("preis"),
+                                    p.get("pivot"), p.get("stop"))
+        if abstand is not None and abstand > STOP_MAX_PCT:
+            stop_zu_weit.append({"ticker": e.get("ticker"), "stop_abstand_pct": abstand})
             continue
         earn = e.get("earnings") or {}
         bt = _backtest_info(pivot_backtest, p.get("pivot_status"))
@@ -323,6 +357,7 @@ def schreibe():
             "qualitaet": p.get("qualitaet"),
             "pivot": p.get("pivot"),
             "stop": p.get("stop"),
+            "stop_abstand_pct": abstand,
             # naechster Earnings-Termin in Tagen (Frontend wendet warnTage() an)
             "earnings_tage": earn.get("tage") if earn.get("status") == "termin" else None,
             "regime": (regime.get(e.get("markt")) or {}).get("ampel"),
@@ -359,6 +394,8 @@ def schreibe():
         "schwelle": kauf,
         "marktregime": regime,
         "anzahl": len(setups),
+        "stop_max_pct": STOP_MAX_PCT,
+        "stop_zu_weit": stop_zu_weit,
         "setups": setups,
     }
     os.makedirs(_SH_DATA, exist_ok=True)
@@ -368,7 +405,8 @@ def schreibe():
         f.write("window.TOP_SETUPS = ")
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
         f.write(";")
-    print(f"Top-Setups: {len(setups)} Setups ({aktiv} in gruenem Regime) -> {OUT_JSON}")
+    print(f"Top-Setups: {len(setups)} Setups ({aktiv} in gruenem Regime, "
+          f"{len(stop_zu_weit)} wegen Stop > {STOP_MAX_PCT:.0f} % ausgefiltert) -> {OUT_JSON}")
 
     # Push NEUER Setups - scheitert nie hart (wie der Rest dieser Datei: ein
     # kaputter/fehlender ntfy-Kanal darf das Aggregat selbst nie verhindern).
